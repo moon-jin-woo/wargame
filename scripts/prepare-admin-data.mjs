@@ -236,8 +236,20 @@ const features = sourceFeatures.map((feature, index) => {
   }
 })
 
+function firstPosition(coordinates) {
+  let current = coordinates
+
+  while (Array.isArray(current) && Array.isArray(current[0])) {
+    current = current[0]
+  }
+
+  return current
+}
+
 const sample = features[0]
-const firstCoordinate = sample?.geometry?.coordinates?.[0]?.[0]?.[0]
+const firstCoordinate = sample
+  ? firstPosition(sample.geometry.coordinates)
+  : null
 
 if (
   !sample ||
