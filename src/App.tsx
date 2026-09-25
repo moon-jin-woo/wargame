@@ -1,172 +1,469 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
-import { advanceTick, attack, createInitialState, factions } from './game'
-import type { GameState } from './types'
+import { loadLatestAdminDongs } from './adminData'
+import {
+  advanceTick,
+  captureTerritory,
+  createInitialState,
+  factions,
+  ownerCounts,
+  startGame,
+} from './game'
+import type { AdminMapData, FactionId, GameState, TerritoryState } from './types'
 
-const points: Record<string, [number, number]> = {
-  seoul: [126.978, 37.5665],
-  incheon: [126.7052, 37.4563],
-  suwon: [127.0286, 37.2636],
-  daejeon: [127.3845, 36.3504],
-  daegu: [128.6014, 35.8714],
-  gwangju: [126.8526, 35.1595],
-  busan: [129.0756, 35.1796],
+const SOURCE_ID = 'admin-dongs'
+const FILL_LAYER_ID = 'admin-dongs-fill'
+const LINE_LAYER_ID = 'admin-dongs-line'
+
+function ownerName(owner: FactionId, game: GameState): string {
+  return owner === 'player' ? game.playerName : factions[owner].name
 }
 
 function App() {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const markersRef = useRef<Record<string, maplibregl.Marker>>({})
-  const [game, setGame] = useState<GameState>(() => createInitialState())
+  const previousTerritories = useRef<Record<string, TerritoryState>>({})
+  const previousSelected = useRef<string | null>(null)
+
+  const [mapLoaded, setMapLoaded] = useState(false)
+  const [layerReady, setLayerReady] = useState(false)
+  const [adminData, setAdminData] = useState<AdminMapData | null>(null)
+  const [game, setGame] = useState<GameState | null>(null)
+  const [loadingError, setLoadingError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json',
-      center: [127.7, 36.25],
-      zoom: 6.25,
-      minZoom: 5.6,
-      maxZoom: 12,
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors',
+          },
+        },
+        layers: [
+          {
+            id: 'osm-base',
+            type: 'raster',
+            source: 'osm',
+            paint: {
+              'raster-saturation': -0.55,
+              'raster-brightness-min': 0.12,
+              'raster-brightness-max': 0.72,
+              'raster-contrast': 0.18,
+            },
+          },
+        ],
+      },
+      center: [127.65, 36.25],
+      zoom: 6.2,
+      minZoom: 5.4,
+      maxZoom: 13,
+      attributionControl: true,
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-left')
+    map.once('load', () => setMapLoaded(true))
     mapRef.current = map
 
     return () => {
-      Object.values(markersRef.current).forEach((marker) => marker.remove())
-      markersRef.current = {}
       map.remove()
       mapRef.current = null
     }
   }, [])
 
   useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
+    let cancelled = false
 
-    Object.values(markersRef.current).forEach((marker) => marker.remove())
-    markersRef.current = {}
+    loadLatestAdminDongs()
+      .then((data) => {
+        if (cancelled) return
+        setAdminData(data)
+        setGame(createInitialState(data.territories, data.version))
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setLoadingError(error instanceof Error ? error.message : '행정동 데이터를 불러오지 못했습니다.')
+      })
 
-    for (const [id, dong] of Object.entries(game.dongs)) {
-      const coords = points[id]
-      if (!coords) continue
-
-      const el = document.createElement('button')
-      el.className = 'territory-marker'
-      el.style.setProperty('--faction-color', factions[dong.owner].color)
-      el.textContent = String(Math.round(dong.troops))
-      el.title = dong.name
-      el.onclick = () => setGame((prev) => ({ ...prev, selectedDongId: id }))
-
-      const marker = new maplibregl.Marker({ element: el })
-        .setLngLat(coords)
-        .addTo(map)
-
-      markersRef.current[id] = marker
+    return () => {
+      cancelled = true
     }
-  }, [game.dongs])
+  }, [])
 
   useEffect(() => {
-    if (!game.running) return
+    const map = mapRef.current
+    if (!map || !mapLoaded || !adminData || map.getSource(SOURCE_ID)) return
+
+    map.addSource(SOURCE_ID, {
+      type: 'geojson',
+      data: adminData.collection as never,
+      promoteId: 'gameId',
+    })
+
+    map.addLayer({
+      id: FILL_LAYER_ID,
+      type: 'fill',
+      source: SOURCE_ID,
+      paint: {
+        'fill-color': [
+          'match',
+          ['feature-state', 'owner'],
+          'player',
+          factions.player.color,
+          'red',
+          factions.red.color,
+          'blue',
+          factions.blue.color,
+          'green',
+          factions.green.color,
+          factions.neutral.color,
+        ],
+        'fill-opacity': [
+          'case',
+          ['==', ['feature-state', 'owner'], 'neutral'],
+          0.2,
+          0.48,
+        ],
+      },
+    })
+
+    map.addLayer({
+      id: LINE_LAYER_ID,
+      type: 'line',
+      source: SOURCE_ID,
+      paint: {
+        'line-color': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          '#ffffff',
+          '#26313d',
+        ],
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          2.8,
+          0.65,
+        ],
+        'line-opacity': 0.9,
+      },
+    })
+
+    const clickHandler = (event: maplibregl.MapLayerMouseEvent) => {
+      const id = event.features?.[0]?.properties?.gameId
+      if (!id) return
+      setGame((previous) => (previous ? { ...previous, selectedId: String(id) } : previous))
+    }
+
+    const enterHandler = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+
+    const leaveHandler = () => {
+      map.getCanvas().style.cursor = ''
+    }
+
+    map.on('click', FILL_LAYER_ID, clickHandler)
+    map.on('mouseenter', FILL_LAYER_ID, enterHandler)
+    map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
+
+    previousTerritories.current = {}
+    previousSelected.current = null
+    setLayerReady(true)
+
+    return () => {
+      map.off('click', FILL_LAYER_ID, clickHandler)
+      map.off('mouseenter', FILL_LAYER_ID, enterHandler)
+      map.off('mouseleave', FILL_LAYER_ID, leaveHandler)
+    }
+  }, [adminData, mapLoaded])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady || !game) return
+
+    for (const [id, territory] of Object.entries(game.territories)) {
+      if (previousTerritories.current[id] === territory) continue
+
+      map.setFeatureState(
+        { source: SOURCE_ID, id },
+        {
+          owner: territory.owner,
+          troops: territory.troops,
+          supply: territory.supply,
+        },
+      )
+    }
+
+    previousTerritories.current = game.territories
+  }, [game?.territories, layerReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady || !game) return
+
+    if (previousSelected.current) {
+      map.setFeatureState(
+        { source: SOURCE_ID, id: previousSelected.current },
+        { selected: false },
+      )
+    }
+
+    if (game.selectedId) {
+      map.setFeatureState(
+        { source: SOURCE_ID, id: game.selectedId },
+        { selected: true },
+      )
+    }
+
+    previousSelected.current = game.selectedId
+  }, [game?.selectedId, layerReady])
+
+  useEffect(() => {
+    if (!game || !game.running || game.phase !== 'running') return
 
     const interval = window.setInterval(() => {
-      setGame((prev) => advanceTick(prev))
+      setGame((previous) => (previous ? advanceTick(previous) : previous))
     }, 1000 / game.speed)
 
     return () => window.clearInterval(interval)
-  }, [game.running, game.speed])
+  }, [game?.running, game?.speed, game?.phase])
 
-  const selected = game.selectedDongId ? game.dongs[game.selectedDongId] : null
-  const playerNeighbors = useMemo(() => {
-    if (!selected) return []
+  const selected = game?.selectedId ? game.territories[game.selectedId] : null
+
+  const neighbors = useMemo(() => {
+    if (!selected || !game) return []
     return selected.neighbors
-      .map((id) => game.dongs[id])
-      .filter(Boolean)
-  }, [selected, game.dongs])
+      .map((id) => game.territories[id])
+      .filter((territory): territory is TerritoryState => Boolean(territory))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [selected, game])
 
-  const playerOwned = Object.values(game.dongs).filter((dong) => dong.owner === 'player').length
-  const victory = playerOwned === Object.keys(game.dongs).length
+  const counts = useMemo(() => (game ? ownerCounts(game) : null), [game])
+  const total = game ? Object.keys(game.territories).length : 0
+
+  const focusSelected = () => {
+    if (!selected || !mapRef.current) return
+    mapRef.current.easeTo({
+      center: selected.centroid,
+      zoom: Math.max(mapRef.current.getZoom(), 9),
+      duration: 500,
+    })
+  }
 
   return (
     <main className="app-shell">
       <section className="map-panel">
         <div ref={mapContainer} className="map" />
+
         <div className="topbar">
-          <strong>WARGAME / KOREA</strong>
-          <span>Tick {game.tick}</span>
-          <button onClick={() => setGame((prev) => ({ ...prev, running: !prev.running }))}>
-            {game.running ? '일시정지' : '재개'}
-          </button>
-          {[1, 2, 4].map((speed) => (
-            <button
-              key={speed}
-              className={game.speed === speed ? 'active' : ''}
-              onClick={() => setGame((prev) => ({ ...prev, speed: speed as 1 | 2 | 4 }))}
-            >
-              ×{speed}
-            </button>
-          ))}
+          <div className="brand-block">
+            <strong>WARGAME / KOREA</strong>
+            <small>
+              {game ? `행정동 ${total.toLocaleString()}개 · 데이터 ${game.dataVersion}` : '데이터 준비 중'}
+            </small>
+          </div>
+
+          {game?.phase === 'running' && (
+            <>
+              <span className="tick">Tick {game.tick}</span>
+              <button
+                onClick={() =>
+                  setGame((previous) =>
+                    previous ? { ...previous, running: !previous.running } : previous,
+                  )
+                }
+              >
+                {game.running ? '일시정지' : '재개'}
+              </button>
+              {([1, 2, 4] as const).map((speed) => (
+                <button
+                  key={speed}
+                  className={game.speed === speed ? 'active' : ''}
+                  onClick={() =>
+                    setGame((previous) => (previous ? { ...previous, speed } : previous))
+                  }
+                >
+                  ×{speed}
+                </button>
+              ))}
+            </>
+          )}
         </div>
+
+        {!game && !loadingError && (
+          <div className="loading-card">
+            <strong>전국 행정동 경계 불러오는 중</strong>
+            <span>첫 로딩에서는 경계 데이터 다운로드와 인접성 계산이 진행됩니다.</span>
+          </div>
+        )}
+
+        {loadingError && (
+          <div className="loading-card error">
+            <strong>데이터 로딩 실패</strong>
+            <span>{loadingError}</span>
+          </div>
+        )}
       </section>
 
       <aside className="sidebar">
         <header>
-          <p className="eyebrow">전국전선 통제</p>
-          <h1>행정동 RTS 프로토타입</h1>
+          <p className="eyebrow">전국 영역 통제</p>
+          <h1>행정동 RTS</h1>
           <p className="muted">
-            현재는 행정동 GeoJSON 연결 전 단계입니다. 지도/게임 루프를 먼저 검증하기 위해 주요 권역을 임시 노드로 사용합니다.
+            실제 행정동 경계를 게임 영토로 사용합니다. 게임 수치는 현실의 군사 자료가 아닌 추상화된 값입니다.
           </p>
         </header>
 
-        <div className="status-grid">
-          <div><span>점령</span><strong>{playerOwned}/{Object.keys(game.dongs).length}</strong></div>
-          <div><span>게임 속도</span><strong>×{game.speed}</strong></div>
-        </div>
+        {game && counts && (
+          <div className="faction-grid">
+            {(Object.keys(factions) as FactionId[]).map((id) => (
+              <div key={id}>
+                <i style={{ background: factions[id].color }} />
+                <span>{id === 'player' ? game.playerName : factions[id].name}</span>
+                <strong>{counts[id].toLocaleString()}</strong>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {victory && <div className="victory">전국 점령 완료</div>}
+        {game?.phase === 'setup' && (
+          <section className="card setup-card">
+            <p className="section-label">게임 설정</p>
+            <label>
+              세력명
+              <input
+                value={game.playerName}
+                maxLength={24}
+                onChange={(event) =>
+                  setGame((previous) =>
+                    previous ? { ...previous, playerName: event.target.value || '플레이어 세력' } : previous,
+                  )
+                }
+              />
+            </label>
+            <p className="muted">
+              지도에서 원하는 행정동을 고른 뒤 시작하세요. AI 세력은 선택한 지역과 서로 멀리 떨어진 곳에 자동 배치됩니다.
+            </p>
+            <button
+              className="primary"
+              disabled={!selected}
+              onClick={() => {
+                if (!selected) return
+                setGame((previous) => (previous ? startGame(previous, selected.id) : previous))
+              }}
+            >
+              {selected ? `${selected.name}에서 시작` : '시작 지역 선택'}
+            </button>
+          </section>
+        )}
 
-        {selected ? (
-          <section className="card">
+        {game?.phase === 'victory' && (
+          <div className="result-card">
+            <strong>전국 점령 완료</strong>
+            <span>{game.tick.toLocaleString()}틱 만에 모든 행정동을 확보했습니다.</span>
+          </div>
+        )}
+
+        {game?.phase === 'defeat' && (
+          <div className="result-card defeat">
+            <strong>세력 소멸</strong>
+            <span>플레이어가 보유한 행정동이 없습니다.</span>
+          </div>
+        )}
+
+        {selected && game ? (
+          <section className="card territory-card">
             <div className="row">
-              <h2>{selected.name}</h2>
-              <span className="badge" style={{ borderColor: factions[selected.owner].color }}>
-                {factions[selected.owner].name}
+              <div>
+                <p className="section-label">선택 지역</p>
+                <h2>{selected.name}</h2>
+              </div>
+              <span
+                className="badge"
+                style={{ borderColor: factions[selected.owner].color }}
+              >
+                {ownerName(selected.owner, game)}
               </span>
             </div>
-            <dl>
-              <div><dt>병력</dt><dd>{Math.round(selected.troops)}</dd></div>
-              <div><dt>보급</dt><dd>{Math.round(selected.supply)}%</dd></div>
-            </dl>
 
-            <h3>인접 지역</h3>
+            <p className="full-name">{selected.fullName}</p>
+
+            <div className="metric-grid">
+              <div>
+                <span>병력 지수</span>
+                <strong>{Math.round(selected.troops)}</strong>
+              </div>
+              <div>
+                <span>보급 지수</span>
+                <strong>{Math.round(selected.supply)}%</strong>
+              </div>
+              <div>
+                <span>인접 지역</span>
+                <strong>{selected.neighbors.length}</strong>
+              </div>
+            </div>
+
+            <button className="secondary" onClick={focusSelected}>
+              지도에서 확대
+            </button>
+
+            <div className="neighbor-heading">
+              <h3>인접 행정동</h3>
+              <span>{neighbors.length}개</span>
+            </div>
+
             <div className="neighbor-list">
-              {playerNeighbors.map((neighbor) => (
-                <button
-                  key={neighbor.id}
-                  onClick={() => {
-                    if (selected.owner === 'player' && neighbor.owner !== 'player') {
-                      setGame((prev) => attack(prev, selected.id, neighbor.id))
-                    } else {
-                      setGame((prev) => ({ ...prev, selectedDongId: neighbor.id }))
-                    }
-                  }}
-                >
-                  <span>{neighbor.name}</span>
-                  <small>{factions[neighbor.owner].name} · {Math.round(neighbor.troops)}</small>
-                </button>
-              ))}
+              {neighbors.map((neighbor) => {
+                const canCapture =
+                  game.phase === 'running' &&
+                  selected.owner === 'player' &&
+                  neighbor.owner !== 'player'
+
+                return (
+                  <button
+                    key={neighbor.id}
+                    className={canCapture ? 'capture' : ''}
+                    onClick={() => {
+                      if (canCapture) {
+                        setGame((previous) =>
+                          previous
+                            ? captureTerritory(previous, selected.id, neighbor.id)
+                            : previous,
+                        )
+                      } else {
+                        setGame((previous) =>
+                          previous ? { ...previous, selectedId: neighbor.id } : previous,
+                        )
+                      }
+                    }}
+                  >
+                    <span>{neighbor.name}</span>
+                    <small>
+                      {ownerName(neighbor.owner, game)} · {Math.round(neighbor.troops)}
+                      {canCapture ? ' · 점령 시도' : ''}
+                    </small>
+                  </button>
+                )
+              })}
             </div>
           </section>
         ) : (
-          <p>지도에서 지역을 선택하세요.</p>
+          <section className="card">
+            <p className="muted">지도에서 행정동을 선택하세요.</p>
+          </section>
         )}
 
-        <section className="card">
-          <h3>다음 구현</h3>
+        <section className="card source-card">
+          <p className="section-label">데이터</p>
           <p className="muted">
-            실제 전국 행정동 경계 GeoJSON, 경계 기반 인접성 계산, 행정동별 점령 색상, AI 공격 루프, 도로 기반 보급 시스템을 연결할 예정입니다.
+            배경은 OpenStreetMap, 행정동 경계는 SGIS 기반 admdongkor light 데이터를 사용합니다.
+            섬처럼 육지 경계가 이어지지 않는 권역은 게임 진행을 위해 가장 가까운 권역과 추상 연결됩니다.
           </p>
         </section>
       </aside>
