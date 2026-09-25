@@ -50,17 +50,6 @@ export interface GameState {
 
 export interface AdminMapData {
   version: string
-  collection: {
-    type: 'FeatureCollection'
-    features: Array<{
-      type: 'Feature'
-      id?: string | number
-      properties: Record<string, unknown>
-      geometry: {
-        type: 'Polygon' | 'MultiPolygon'
-        coordinates: unknown
-      }
-    }>
-  }
+  geojsonUrl: string
   territories: Record<string, TerritoryState>
 }
