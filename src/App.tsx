@@ -64,7 +64,7 @@ function App() {
       zoom: 6.2,
       minZoom: 5.4,
       maxZoom: 13,
-      attributionControl: true,
+      attributionControl: { compact: true },
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-left')
