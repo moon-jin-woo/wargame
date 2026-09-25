@@ -9,6 +9,7 @@ import {
   ownerCounts,
   startGame,
 } from './game'
+import { getSavedAt, restoreGame, saveGame } from './persistence'
 import type { AdminMapData, FactionId, GameState, TerritoryState } from './types'
 
 const SOURCE_ID = 'admin-dongs'
@@ -30,6 +31,8 @@ function App() {
   const [adminData, setAdminData] = useState<AdminMapData | null>(null)
   const [game, setGame] = useState<GameState | null>(null)
   const [loadingError, setLoadingError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [savedAt, setSavedAt] = useState<number | null>(() => getSavedAt())
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -234,6 +237,12 @@ function App() {
     return () => window.clearInterval(interval)
   }, [game?.running, game?.speed, game?.phase])
 
+  useEffect(() => {
+    if (!game || game.phase !== 'running' || game.tick === 0 || game.tick % 10 !== 0) return
+    const timestamp = saveGame(game)
+    setSavedAt(timestamp)
+  }, [game?.tick])
+
   const selected = game?.selectedId ? game.territories[game.selectedId] : null
 
   const neighbors = useMemo(() => {
@@ -243,6 +252,16 @@ function App() {
       .filter((territory): territory is TerritoryState => Boolean(territory))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [selected, game])
+
+  const searchResults = useMemo(() => {
+    if (!game) return []
+    const query = searchQuery.trim().toLocaleLowerCase('ko-KR')
+    if (query.length < 2) return []
+
+    return Object.values(game.territories)
+      .filter((territory) => territory.fullName.toLocaleLowerCase('ko-KR').includes(query))
+      .slice(0, 24)
+  }, [game, searchQuery])
 
   const counts = useMemo(() => (game ? ownerCounts(game) : null), [game])
   const total = game ? Object.keys(game.territories).length : 0
@@ -254,6 +273,28 @@ function App() {
       zoom: Math.max(mapRef.current.getZoom(), 9),
       duration: 500,
     })
+  }
+
+  const selectTerritory = (territory: TerritoryState) => {
+    setGame((previous) => (previous ? { ...previous, selectedId: territory.id } : previous))
+    mapRef.current?.easeTo({
+      center: territory.centroid,
+      zoom: Math.max(mapRef.current?.getZoom() ?? 6, 9),
+      duration: 450,
+    })
+  }
+
+  const handleSave = () => {
+    if (!game || game.phase === 'setup') return
+    setSavedAt(saveGame(game))
+  }
+
+  const handleLoad = () => {
+    if (!game) return
+    const restored = restoreGame(game)
+    if (!restored) return
+    setGame(restored)
+    setSavedAt(getSavedAt())
   }
 
   return (
@@ -294,6 +335,17 @@ function App() {
               ))}
             </>
           )}
+
+          {game && (
+            <>
+              <button disabled={game.phase === 'setup'} onClick={handleSave}>
+                저장
+              </button>
+              <button disabled={!savedAt} onClick={handleLoad}>
+                불러오기
+              </button>
+            </>
+          )}
         </div>
 
         {!game && !loadingError && (
@@ -330,6 +382,40 @@ function App() {
               </div>
             ))}
           </div>
+        )}
+
+        {game && (
+          <section className="card search-card">
+            <div className="search-heading">
+              <div>
+                <p className="section-label">행정동 검색</p>
+                <span className="save-state">
+                  {savedAt
+                    ? `마지막 저장 ${new Date(savedAt).toLocaleString('ko-KR')}`
+                    : '저장된 게임 없음'}
+                </span>
+              </div>
+            </div>
+            <input
+              value={searchQuery}
+              placeholder="예: 사직동, 수원시, 제주"
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {searchQuery.trim().length >= 2 && (
+              <div className="search-results">
+                {searchResults.length > 0 ? (
+                  searchResults.map((territory) => (
+                    <button key={territory.id} onClick={() => selectTerritory(territory)}>
+                      <strong>{territory.name}</strong>
+                      <span>{territory.fullName}</span>
+                    </button>
+                  ))
+                ) : (
+                  <p>검색 결과가 없습니다.</p>
+                )}
+              </div>
+            )}
+          </section>
         )}
 
         {game?.phase === 'setup' && (
