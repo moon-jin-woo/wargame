@@ -126,7 +126,7 @@ function App() {
 
     map.addSource(SOURCE_ID, {
       type: 'geojson',
-      data: adminData.collection as never,
+      data: adminData.geojsonUrl,
     })
 
     map.addLayer({
@@ -234,12 +234,26 @@ function App() {
     previousTerritories.current = {}
     previousFrontlines.current = {}
     previousSelected.current = null
-    setLayerReady(true)
+    setLayerReady(false)
+
+    const sourceDataHandler = (event: maplibregl.MapSourceDataEvent) => {
+      if (event.sourceId !== SOURCE_ID || !event.isSourceLoaded) return
+      setLayerReady(true)
+      map.off('sourcedata', sourceDataHandler)
+    }
+
+    map.on('sourcedata', sourceDataHandler)
+
+    if (map.isSourceLoaded(SOURCE_ID)) {
+      setLayerReady(true)
+      map.off('sourcedata', sourceDataHandler)
+    }
 
     return () => {
       map.off('click', FILL_LAYER_ID, clickHandler)
       map.off('mouseenter', FILL_LAYER_ID, enterHandler)
       map.off('mouseleave', FILL_LAYER_ID, leaveHandler)
+      map.off('sourcedata', sourceDataHandler)
     }
   }, [adminData, mapLoaded])
 
@@ -593,10 +607,16 @@ function App() {
           </div>
         )}
 
-        {!game && !loadingError && (
+        {(!game || !layerReady) && !loadingError && (
           <div className="loading-card">
-            <strong>전국 행정동 경계 불러오는 중</strong>
-            <span>첫 로딩에서는 경계 데이터 다운로드와 인접성 계산이 진행됩니다.</span>
+            <strong>
+              {!game ? '게임 데이터 불러오는 중' : '전국 행정동 영토 불러오는 중'}
+            </strong>
+            <span>
+              {!game
+                ? '행정동 게임 상태를 준비하고 있습니다.'
+                : '지도 엔진이 3,558개 행정동 폴리곤을 worker에서 불러오고 있습니다.'}
+            </span>
           </div>
         )}
 
