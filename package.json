@@ -4,13 +4,14 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.app.json && vite build",
+    "dev": "npm run prepare:data && vite",
+    "build": "npm run prepare:data && tsc --noEmit -p tsconfig.app.json && vite build",
     "check": "tsc --noEmit -p tsconfig.app.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare:data": "node scripts/prepare-admin-data.mjs"
   },
   "dependencies": {
-    "admdongkor": "^0.5.1",
+    "admdongkor": "^0.5.2",
     "maplibre-gl": "^6.11.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
