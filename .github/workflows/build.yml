@@ -22,5 +22,8 @@ jobs:
       - name: Install
         run: npm install
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: Build
         run: npm run build
