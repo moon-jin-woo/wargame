@@ -1,4 +1,11 @@
-import type { Faction, FactionId, GameState, TerritoryState } from './types'
+import type {
+  AiCount,
+  Difficulty,
+  Faction,
+  FactionId,
+  GameState,
+  TerritoryState,
+} from './types'
 
 export const factions: Record<FactionId, Faction> = {
   player: { id: 'player', name: '플레이어', color: '#2f7df6' },
@@ -8,7 +15,17 @@ export const factions: Record<FactionId, Faction> = {
   neutral: { id: 'neutral', name: '중립', color: '#6f7782' },
 }
 
+export const difficultyLabels: Record<Difficulty, string> = {
+  easy: '쉬움',
+  normal: '보통',
+  hard: '어려움',
+}
+
 const aiFactions: FactionId[] = ['red', 'blue', 'green']
+
+function activeAiFactions(count: AiCount): FactionId[] {
+  return aiFactions.slice(0, count)
+}
 
 function hashString(value: string): number {
   let hash = 2166136261
@@ -39,6 +56,8 @@ export function createInitialState(
     tick: 0,
     selectedId: firstId,
     playerName: '플레이어 세력',
+    aiCount: 3,
+    difficulty: 'normal',
     dataVersion,
     territories,
   }
@@ -119,7 +138,7 @@ export function startGame(state: GameState, startId: string): GameState {
 
   territories = claimCluster(territories, startId, 'player', reserved)
 
-  for (const faction of aiFactions) {
+  for (const faction of activeAiFactions(state.aiCount)) {
     const seed = chooseFarthestSeed(territories, seeds, reserved)
     if (!seed) continue
     seeds.push(seed)
@@ -196,11 +215,20 @@ export function captureTerritory(state: GameState, fromId: string, toId: string)
   return resolveCapture(state, fromId, toId, 'player')
 }
 
+function targetScore(target: TerritoryState, difficulty: Difficulty): number {
+  if (difficulty === 'easy') return 0
+  const neutralBonus = target.owner === 'neutral' ? 18 : 0
+  const weakness = Math.max(0, 120 - target.troops)
+  const supplyWeakness = Math.max(0, 100 - target.supply)
+  return neutralBonus + weakness + supplyWeakness * 0.25
+}
+
 function runAiTurn(state: GameState, owner: FactionId): GameState {
+  const threshold = state.difficulty === 'easy' ? 36 : state.difficulty === 'hard' ? 23 : 28
   const candidates = Object.values(state.territories).filter(
     (territory) =>
       territory.owner === owner &&
-      territory.troops >= 28 &&
+      territory.troops >= threshold &&
       territory.neighbors.some((id) => state.territories[id]?.owner !== owner),
   )
 
@@ -209,11 +237,25 @@ function runAiTurn(state: GameState, owner: FactionId): GameState {
   const from = candidates[hashString(`${owner}:${state.tick}`) % candidates.length]
   const targets = from.neighbors
     .map((id) => state.territories[id])
-    .filter((territory): territory is TerritoryState => Boolean(territory && territory.owner !== owner))
+    .filter(
+      (territory): territory is TerritoryState =>
+        Boolean(territory && territory.owner !== owner),
+    )
 
   if (targets.length === 0) return state
 
-  const to = targets[hashString(`${from.id}:${state.tick}`) % targets.length]
+  let to: TerritoryState
+  if (state.difficulty === 'easy') {
+    to = targets[hashString(`${from.id}:${state.tick}`) % targets.length]
+  } else {
+    to = [...targets].sort((a, b) => {
+      const scoreDifference =
+        targetScore(b, state.difficulty) - targetScore(a, state.difficulty)
+      if (scoreDifference !== 0) return scoreDifference
+      return a.id.localeCompare(b.id)
+    })[0]
+  }
+
   return resolveCapture(state, from.id, to.id, owner)
 }
 
@@ -258,8 +300,11 @@ export function advanceTick(state: GameState): GameState {
     territories,
   }
 
-  if (nextTick % 3 === 0) {
-    for (const faction of aiFactions) {
+  const aiInterval =
+    state.difficulty === 'easy' ? 5 : state.difficulty === 'hard' ? 2 : 3
+
+  if (nextTick % aiInterval === 0) {
+    for (const faction of activeAiFactions(state.aiCount)) {
       next = runAiTurn(next, faction)
     }
   }
