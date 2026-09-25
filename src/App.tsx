@@ -34,6 +34,7 @@ function App() {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousTerritories = useRef<Record<string, TerritoryState>>({})
   const previousSelected = useRef<string | null>(null)
+  const previousFrontlines = useRef<Record<string, boolean>>({})
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -50,6 +51,7 @@ function App() {
       container: mapContainer.current,
       style: {
         version: 8,
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {
           osm: {
             type: 'raster',
@@ -217,6 +219,7 @@ function App() {
     map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
 
     previousTerritories.current = {}
+    previousFrontlines.current = {}
     previousSelected.current = null
     setLayerReady(true)
 
@@ -232,23 +235,32 @@ function App() {
     if (!map || !layerReady || !game) return
 
     for (const [id, territory] of Object.entries(game.territories)) {
-      if (previousTerritories.current[id] === territory) continue
+      if (previousTerritories.current[id] !== territory) {
+        map.setFeatureState(
+          { source: SOURCE_ID, id },
+          {
+            owner: territory.owner,
+            troops: territory.troops,
+            supply: territory.supply,
+          },
+        )
+      }
 
-      map.setFeatureState(
-        { source: SOURCE_ID, id },
-        {
-          owner: territory.owner,
-          troops: territory.troops,
-          supply: territory.supply,
-          frontline:
-            territory.owner !== 'neutral' &&
-            territory.neighbors.some(
-              (neighborId) =>
-                game.territories[neighborId] &&
-                game.territories[neighborId].owner !== territory.owner,
-            ),
-        },
-      )
+      const frontline =
+        territory.owner !== 'neutral' &&
+        territory.neighbors.some(
+          (neighborId) =>
+            game.territories[neighborId] &&
+            game.territories[neighborId].owner !== territory.owner,
+        )
+
+      if (previousFrontlines.current[id] !== frontline) {
+        map.setFeatureState(
+          { source: SOURCE_ID, id },
+          { frontline },
+        )
+        previousFrontlines.current[id] = frontline
+      }
     }
 
     previousTerritories.current = game.territories
