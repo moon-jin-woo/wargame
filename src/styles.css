@@ -861,3 +861,61 @@ button {
   border-radius: inherit;
   transition: width 180ms ease;
 }
+
+
+.isolation-chip {
+  display: inline-block;
+  margin: -6px 0 12px 6px;
+  padding: 4px 7px;
+  border: 1px solid #8b5151;
+  border-radius: 99px;
+  background: #241717;
+  color: #d89a9a;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.neighbor-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.neighbor-main {
+  min-width: 0;
+}
+
+.neighbor-list .support-button {
+  display: flex;
+  width: auto;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 9px;
+  border-color: #42664f;
+  background: #142019;
+  color: #a8cdb4;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.neighbor-list .support-button:hover {
+  border-color: #649673;
+}
+
+.event-row.support {
+  border-left: 2px solid #5c8ca7;
+}
+
+@media (max-width: 420px) {
+  .neighbor-item {
+    grid-template-columns: 1fr;
+  }
+
+  .neighbor-list .support-button {
+    width: 100%;
+  }
+}

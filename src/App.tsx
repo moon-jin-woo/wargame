@@ -9,6 +9,7 @@ import {
   factions,
   ownerCounts,
   startGame,
+  transferTroops,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
 import type {
@@ -305,6 +306,13 @@ function App() {
   }, [game?.tick])
 
   const selected = game?.selectedId ? game.territories[game.selectedId] : null
+  const selectedIsIsolated = Boolean(
+    selected &&
+      selected.owner !== 'neutral' &&
+      !selected.neighbors.some(
+        (neighborId) => game?.territories[neighborId]?.owner === selected.owner,
+      ),
+  )
 
   const neighbors = useMemo(() => {
     if (!selected || !game) return []
@@ -867,6 +875,9 @@ function App() {
                 (neighborId) =>
                   game.territories[neighborId]?.owner !== selected.owner,
               ) && <span className="frontline-chip">접경 지역</span>}
+            {game.phase === 'running' && selectedIsIsolated && (
+              <span className="isolation-chip">고립 · 보급 감소</span>
+            )}
 
             <div className="metric-grid">
               <div>
@@ -922,31 +933,55 @@ function App() {
                   game.phase === 'running' &&
                   selected.owner === 'player' &&
                   neighbor.owner !== 'player'
+                const canSupport =
+                  game.phase === 'running' &&
+                  selected.owner === 'player' &&
+                  neighbor.owner === 'player' &&
+                  selected.troops > 20
 
                 return (
-                  <button
-                    key={neighbor.id}
-                    className={canCapture ? 'capture' : ''}
-                    onClick={() => {
-                      if (canCapture) {
-                        setGame((previous) =>
-                          previous
-                            ? captureTerritory(previous, selected.id, neighbor.id)
-                            : previous,
-                        )
-                      } else {
-                        setGame((previous) =>
-                          previous ? { ...previous, selectedId: neighbor.id } : previous,
-                        )
-                      }
-                    }}
-                  >
-                    <span>{neighbor.name}</span>
-                    <small>
-                      {ownerName(neighbor.owner, game)} · {Math.round(neighbor.troops)}
-                      {canCapture ? ' · 점령 시도' : ''}
-                    </small>
-                  </button>
+                  <div key={neighbor.id} className="neighbor-item">
+                    <button
+                      className={`neighbor-main ${canCapture ? 'capture' : ''}`}
+                      onClick={() => {
+                        if (canCapture) {
+                          setGame((previous) =>
+                            previous
+                              ? captureTerritory(previous, selected.id, neighbor.id)
+                              : previous,
+                          )
+                        } else {
+                          setGame((previous) =>
+                            previous
+                              ? { ...previous, selectedId: neighbor.id }
+                              : previous,
+                          )
+                        }
+                      }}
+                    >
+                      <span>{neighbor.name}</span>
+                      <small>
+                        {ownerName(neighbor.owner, game)} · {Math.round(neighbor.troops)}
+                        {canCapture ? ' · 점령 시도' : ''}
+                      </small>
+                    </button>
+
+                    {canSupport && (
+                      <button
+                        className="support-button"
+                        title="현재 지역의 이동 가능한 병력 중 30% 지원"
+                        onClick={() =>
+                          setGame((previous) =>
+                            previous
+                              ? transferTroops(previous, selected.id, neighbor.id)
+                              : previous,
+                          )
+                        }
+                      >
+                        지원 30%
+                      </button>
+                    )}
+                  </div>
                 )
               })}
             </div>
