@@ -919,3 +919,40 @@ button {
     width: 100%;
   }
 }
+
+
+.fatal-error {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: #0b0f14;
+}
+
+.fatal-error > section {
+  width: min(540px, 100%);
+  padding: 22px;
+  border: 1px solid #513d3d;
+  border-radius: 12px;
+  background: #171214;
+}
+
+.fatal-error h1 {
+  margin: 6px 0 10px;
+  font-size: 22px;
+}
+
+.fatal-error p:not(.eyebrow) {
+  margin: 0 0 16px;
+  color: #a89a9f;
+  line-height: 1.55;
+}
+
+.fatal-error button {
+  padding: 9px 12px;
+  border: 1px solid #604d52;
+  border-radius: 7px;
+  background: #231a1d;
+  color: #edf2f7;
+  cursor: pointer;
+}
