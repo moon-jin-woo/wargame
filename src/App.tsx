@@ -127,7 +127,6 @@ function App() {
     map.addSource(SOURCE_ID, {
       type: 'geojson',
       data: adminData.collection as never,
-      promoteId: 'gameId',
     })
 
     map.addLayer({
