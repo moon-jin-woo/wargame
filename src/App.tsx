@@ -14,6 +14,7 @@ import { getSavedAt, restoreGame, saveGame } from './persistence'
 import type {
   AdminMapData,
   AiCount,
+  AiFactionId,
   Difficulty,
   FactionId,
   GameState,
@@ -26,7 +27,14 @@ const LINE_LAYER_ID = 'admin-dongs-line'
 const LABEL_LAYER_ID = 'admin-dongs-label'
 
 function ownerName(owner: FactionId, game: GameState): string {
-  return owner === 'player' ? game.playerName : factions[owner].name
+  if (owner === 'player') return game.playerName
+  if (owner === 'neutral') return factions.neutral.name
+  return game.aiNames[owner]
+}
+
+function ownerColor(owner: FactionId, game: GameState): string {
+  if (owner === 'neutral') return factions.neutral.color
+  return game.factionColors[owner]
 }
 
 function App() {
@@ -126,16 +134,8 @@ function App() {
       source: SOURCE_ID,
       paint: {
         'fill-color': [
-          'match',
-          ['feature-state', 'owner'],
-          'player',
-          factions.player.color,
-          'red',
-          factions.red.color,
-          'blue',
-          factions.blue.color,
-          'green',
-          factions.green.color,
+          'coalesce',
+          ['feature-state', 'color'],
           factions.neutral.color,
         ],
         'fill-opacity': [
@@ -240,6 +240,7 @@ function App() {
           { source: SOURCE_ID, id },
           {
             owner: territory.owner,
+            color: ownerColor(territory.owner, game),
             troops: territory.troops,
             supply: territory.supply,
           },
@@ -372,6 +373,8 @@ function App() {
     setGame((previous) => ({
       ...next,
       playerName: previous?.playerName ?? next.playerName,
+      aiNames: previous?.aiNames ?? next.aiNames,
+      factionColors: previous?.factionColors ?? next.factionColors,
       aiCount: previous?.aiCount ?? next.aiCount,
       difficulty: previous?.difficulty ?? next.difficulty,
       selectedId: previous?.selectedId && next.territories[previous.selectedId]
@@ -524,7 +527,7 @@ function App() {
                     title={`${ownerName(id, game)}: ${counts[id].toLocaleString()}개`}
                     style={{
                       width: `${width}%`,
-                      background: factions[id].color,
+                      background: ownerColor(id, game),
                     }}
                   />
                 )
@@ -561,8 +564,8 @@ function App() {
           <div className="faction-grid">
             {(Object.keys(factions) as FactionId[]).map((id) => (
               <div key={id}>
-                <i style={{ background: factions[id].color }} />
-                <span>{id === 'player' ? game.playerName : factions[id].name}</span>
+                <i style={{ background: ownerColor(id, game) }} />
+                <span>{ownerName(id, game)}</span>
                 <strong>{counts[id].toLocaleString()}</strong>
               </div>
             ))}
@@ -650,18 +653,90 @@ function App() {
         {game?.phase === 'setup' && (
           <section className="card setup-card">
             <p className="section-label">게임 설정</p>
-            <label>
-              세력명
-              <input
-                value={game.playerName}
-                maxLength={24}
-                onChange={(event) =>
-                  setGame((previous) =>
-                    previous ? { ...previous, playerName: event.target.value || '플레이어 세력' } : previous,
-                  )
-                }
-              />
-            </label>
+            <div className="faction-customization">
+              <p className="setup-subtitle">세력 설정</p>
+              <div className="faction-setting-row">
+                <span>내 세력</span>
+                <input
+                  value={game.playerName}
+                  maxLength={24}
+                  onChange={(event) =>
+                    setGame((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            playerName: event.target.value || '플레이어 세력',
+                          }
+                        : previous,
+                    )
+                  }
+                />
+                <input
+                  className="color-input"
+                  type="color"
+                  value={game.factionColors.player}
+                  aria-label="플레이어 세력 색상"
+                  onChange={(event) =>
+                    setGame((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            factionColors: {
+                              ...previous.factionColors,
+                              player: event.target.value,
+                            },
+                          }
+                        : previous,
+                    )
+                  }
+                />
+              </div>
+
+              {(['red', 'blue', 'green'] as AiFactionId[]).map((id, index) => (
+                <div
+                  key={id}
+                  className={`faction-setting-row ${index >= game.aiCount ? 'inactive' : ''}`}
+                >
+                  <span>AI {index + 1}</span>
+                  <input
+                    value={game.aiNames[id]}
+                    maxLength={24}
+                    onChange={(event) =>
+                      setGame((previous) =>
+                        previous
+                          ? {
+                              ...previous,
+                              aiNames: {
+                                ...previous.aiNames,
+                                [id]: event.target.value || factions[id].name,
+                              },
+                            }
+                          : previous,
+                      )
+                    }
+                  />
+                  <input
+                    className="color-input"
+                    type="color"
+                    value={game.factionColors[id]}
+                    aria-label={`AI ${index + 1} 세력 색상`}
+                    onChange={(event) =>
+                      setGame((previous) =>
+                        previous
+                          ? {
+                              ...previous,
+                              factionColors: {
+                                ...previous.factionColors,
+                                [id]: event.target.value,
+                              },
+                            }
+                          : previous,
+                      )
+                    }
+                  />
+                </div>
+              ))}
+            </div>
 
             <div className="setup-options">
               <label>
@@ -742,7 +817,7 @@ function App() {
               </div>
               <span
                 className="badge"
-                style={{ borderColor: factions[selected.owner].color }}
+                style={{ borderColor: ownerColor(selected.owner, game) }}
               >
                 {ownerName(selected.owner, game)}
               </span>
