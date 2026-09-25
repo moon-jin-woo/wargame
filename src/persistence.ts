@@ -1,8 +1,15 @@
-import type { FactionId, GameState, GamePhase } from './types'
+import type {
+  AiCount,
+  Difficulty,
+  FactionId,
+  GamePhase,
+  GameState,
+} from './types'
 
 const SAVE_KEY = 'wargame-save-v1'
 const VALID_OWNERS = new Set<FactionId>(['player', 'red', 'blue', 'green', 'neutral'])
 const VALID_PHASES = new Set<GamePhase>(['setup', 'running', 'victory', 'defeat'])
+const VALID_DIFFICULTIES = new Set<Difficulty>(['easy', 'normal', 'hard'])
 
 type SavedTerritory = {
   owner: FactionId
@@ -11,7 +18,7 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1
+  schema: 1 | 2
   savedAt: number
   tick: number
   speed: 1 | 2 | 4
@@ -19,6 +26,8 @@ type SavedGame = {
   selectedId: string | null
   playerName: string
   dataVersion: string
+  aiCount?: AiCount
+  difficulty?: Difficulty
   territories: Record<string, SavedTerritory>
 }
 
@@ -28,6 +37,10 @@ function clamp(value: number, min: number, max: number): number {
 
 function isSpeed(value: unknown): value is 1 | 2 | 4 {
   return value === 1 || value === 2 || value === 4
+}
+
+function isAiCount(value: unknown): value is AiCount {
+  return value === 1 || value === 2 || value === 3
 }
 
 export function saveGame(state: GameState): number {
@@ -44,7 +57,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 1,
+    schema: 2,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -52,6 +65,8 @@ export function saveGame(state: GameState): number {
     selectedId: state.selectedId,
     playerName: state.playerName,
     dataVersion: state.dataVersion,
+    aiCount: state.aiCount,
+    difficulty: state.difficulty,
     territories,
   }
 
@@ -76,7 +91,11 @@ export function restoreGame(base: GameState): GameState | null {
     if (!raw) return null
 
     const saved = JSON.parse(raw) as Partial<SavedGame>
-    if (saved.schema !== 1 || !saved.territories || typeof saved.territories !== 'object') {
+    if (
+      (saved.schema !== 1 && saved.schema !== 2) ||
+      !saved.territories ||
+      typeof saved.territories !== 'object'
+    ) {
       return null
     }
 
@@ -89,8 +108,12 @@ export function restoreGame(base: GameState): GameState | null {
       const owner = VALID_OWNERS.has(dynamic.owner as FactionId)
         ? (dynamic.owner as FactionId)
         : current.owner
-      const troops = Number.isFinite(dynamic.troops) ? clamp(Number(dynamic.troops), 0, 999) : current.troops
-      const supply = Number.isFinite(dynamic.supply) ? clamp(Number(dynamic.supply), 0, 100) : current.supply
+      const troops = Number.isFinite(dynamic.troops)
+        ? clamp(Number(dynamic.troops), 0, 999)
+        : current.troops
+      const supply = Number.isFinite(dynamic.supply)
+        ? clamp(Number(dynamic.supply), 0, 100)
+        : current.supply
 
       territories[id] = {
         ...current,
@@ -109,17 +132,26 @@ export function restoreGame(base: GameState): GameState | null {
         ? saved.selectedId
         : base.selectedId
 
+    const difficulty = VALID_DIFFICULTIES.has(saved.difficulty as Difficulty)
+      ? (saved.difficulty as Difficulty)
+      : base.difficulty
+
     return {
       ...base,
       phase,
       running: false,
       speed: isSpeed(saved.speed) ? saved.speed : base.speed,
-      tick: typeof saved.tick === 'number' && Number.isFinite(saved.tick) ? Math.max(0, saved.tick) : base.tick,
+      tick:
+        typeof saved.tick === 'number' && Number.isFinite(saved.tick)
+          ? Math.max(0, saved.tick)
+          : base.tick,
       selectedId,
       playerName:
         typeof saved.playerName === 'string' && saved.playerName.trim()
           ? saved.playerName.slice(0, 24)
           : base.playerName,
+      aiCount: isAiCount(saved.aiCount) ? saved.aiCount : base.aiCount,
+      difficulty,
       territories,
     }
   } catch {
