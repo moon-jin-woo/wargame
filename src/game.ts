@@ -276,6 +276,52 @@ export function captureTerritory(
   return resolveCapture(state, fromId, toId, 'player')
 }
 
+export function transferTroops(
+  state: GameState,
+  fromId: string,
+  toId: string,
+): GameState {
+  if (state.phase !== 'running') return state
+
+  const from = state.territories[fromId]
+  const to = state.territories[toId]
+
+  if (
+    !from ||
+    !to ||
+    from.owner !== 'player' ||
+    to.owner !== 'player' ||
+    !from.neighbors.includes(toId) ||
+    from.troops <= 20
+  ) {
+    return state
+  }
+
+  const movable = Math.max(0, from.troops - 10)
+  const moved = Math.max(1, Math.floor(movable * 0.3))
+  if (moved <= 0) return state
+
+  const territories = { ...state.territories }
+  territories[fromId] = {
+    ...from,
+    troops: Math.max(10, from.troops - moved),
+  }
+  territories[toId] = {
+    ...to,
+    troops: Math.min(999, to.troops + moved),
+  }
+
+  return withEvent(
+    {
+      ...state,
+      selectedId: toId,
+      territories,
+    },
+    'support',
+    `${from.fullName} → ${to.fullName} · 병력 지수 ${moved} 지원`,
+  )
+}
+
 function targetScore(
   target: TerritoryState,
   difficulty: Difficulty,
@@ -363,16 +409,25 @@ export function advanceTick(state: GameState): GameState {
   const nextTick = state.tick + 1
   let territories = state.territories
 
-  if (nextTick % 2 === 0) {
+  if (nextTick % 4 === 0) {
     territories = { ...territories }
 
     for (const [id, territory] of Object.entries(territories)) {
       if (territory.owner === 'neutral') continue
 
+      const connected = territory.neighbors.some(
+        (neighborId) =>
+          territories[neighborId]?.owner === territory.owner,
+      )
+
       territories[id] = {
         ...territory,
-        troops: Math.min(160, territory.troops + 1),
-        supply: Math.min(100, territory.supply + 0.6),
+        troops: connected
+          ? Math.min(160, territory.troops + 1)
+          : territory.troops,
+        supply: connected
+          ? Math.min(100, territory.supply + 1.2)
+          : Math.max(0, territory.supply - 3),
       }
     }
   }
