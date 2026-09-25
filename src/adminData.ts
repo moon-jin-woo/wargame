@@ -1,7 +1,5 @@
 import type { AdminMapData, TerritoryState } from './types'
 
-type AdmFeatureCollection = AdminMapData['collection']
-
 interface PreparedTerritories {
   version: string
   territories: Record<string, TerritoryState>
@@ -9,16 +7,11 @@ interface PreparedTerritories {
 
 export async function loadLatestAdminDongs(): Promise<AdminMapData> {
   const base = import.meta.env.BASE_URL
-  const [mapResponse, gameResponse] = await Promise.all([
-    fetch(`${base}data/admin-dongs.geojson`, { cache: 'no-cache' }),
-    fetch(`${base}data/admin-territories.json`, { cache: 'no-cache' }),
-  ])
-
-  if (!mapResponse.ok) {
-    throw new Error(
-      `행정동 지도 데이터 로딩 실패: ${mapResponse.status} ${mapResponse.statusText}`,
-    )
-  }
+  const geojsonUrl = `${base}data/admin-dongs.geojson`
+  const gameResponse = await fetch(
+    `${base}data/admin-territories.json`,
+    { cache: 'no-cache' },
+  )
 
   if (!gameResponse.ok) {
     throw new Error(
@@ -26,17 +19,7 @@ export async function loadLatestAdminDongs(): Promise<AdminMapData> {
     )
   }
 
-  const collection = (await mapResponse.json()) as AdmFeatureCollection
   const prepared = (await gameResponse.json()) as PreparedTerritories
-
-  if (
-    !collection ||
-    collection.type !== 'FeatureCollection' ||
-    !Array.isArray(collection.features) ||
-    collection.features.length < 1000
-  ) {
-    throw new Error('행정동 GeoJSON 형식이 올바르지 않습니다.')
-  }
 
   if (
     !prepared ||
@@ -49,7 +32,7 @@ export async function loadLatestAdminDongs(): Promise<AdminMapData> {
 
   return {
     version: prepared.version,
-    collection,
+    geojsonUrl,
     territories: prepared.territories,
   }
 }
