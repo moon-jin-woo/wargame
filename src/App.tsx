@@ -326,6 +326,37 @@ function App() {
   const counts = useMemo(() => (game ? ownerCounts(game) : null), [game])
   const total = game ? Object.keys(game.territories).length : 0
 
+  const nationalStats = useMemo(() => {
+    if (!game || !counts || total === 0) return null
+
+    let playerTroops = 0
+    let playerSupply = 0
+    let playerFrontlines = 0
+
+    for (const territory of Object.values(game.territories)) {
+      if (territory.owner !== 'player') continue
+      playerTroops += territory.troops
+      playerSupply += territory.supply
+      if (
+        territory.neighbors.some(
+          (neighborId) => game.territories[neighborId]?.owner !== 'player',
+        )
+      ) {
+        playerFrontlines += 1
+      }
+    }
+
+    const playerOwned = counts.player
+    return {
+      playerOwned,
+      share: (playerOwned / total) * 100,
+      playerTroops: Math.round(playerTroops),
+      averageSupply:
+        playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
+      playerFrontlines,
+    }
+  }, [game, counts, total])
+
   const focusSelected = () => {
     if (!selected || !mapRef.current) return
     mapRef.current.easeTo({
@@ -371,6 +402,53 @@ function App() {
     setSavedAt(getSavedAt())
   }
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'TEXTAREA')
+      ) {
+        return
+      }
+
+      if (!game) return
+
+      if (event.code === 'Space' && game.phase === 'running') {
+        event.preventDefault()
+        setGame((previous) =>
+          previous ? { ...previous, running: !previous.running } : previous,
+        )
+        return
+      }
+
+      if (
+        game.phase === 'running' &&
+        (event.key === '1' || event.key === '2' || event.key === '4')
+      ) {
+        setGame((previous) =>
+          previous
+            ? { ...previous, speed: Number(event.key) as 1 | 2 | 4 }
+            : previous,
+        )
+        return
+      }
+
+      if (event.key.toLowerCase() === 'f' && selected && mapRef.current) {
+        mapRef.current.easeTo({
+          center: selected.centroid,
+          zoom: Math.max(mapRef.current.getZoom(), 9),
+          duration: 400,
+        })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [game?.phase, selected?.id])
+
   return (
     <main className="app-shell">
       <section className="map-panel">
@@ -388,6 +466,7 @@ function App() {
             <>
               <span className="tick">Tick {game.tick}</span>
               <button
+                title="일시정지/재개 · Space"
                 onClick={() =>
                   setGame((previous) =>
                     previous ? { ...previous, running: !previous.running } : previous,
@@ -399,6 +478,7 @@ function App() {
               {([1, 2, 4] as const).map((speed) => (
                 <button
                   key={speed}
+                  title={`게임 속도 ×${speed} · 숫자 ${speed}`}
                   className={game.speed === speed ? 'active' : ''}
                   onClick={() =>
                     setGame((previous) => (previous ? { ...previous, speed } : previous))
@@ -487,6 +567,50 @@ function App() {
               </div>
             ))}
           </div>
+        )}
+
+        {game && nationalStats && game.phase !== 'setup' && (
+          <section className="card national-stats-card">
+            <div className="stats-heading">
+              <p className="section-label">플레이어 현황</p>
+              <span>Space 일시정지 · 1/2/4 배속 · F 선택지역</span>
+            </div>
+            <div className="national-stats-grid">
+              <div>
+                <span>점령률</span>
+                <strong>{nationalStats.share.toFixed(1)}%</strong>
+              </div>
+              <div>
+                <span>병력 지수 합계</span>
+                <strong>{nationalStats.playerTroops.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>평균 보급</span>
+                <strong>{nationalStats.averageSupply}%</strong>
+              </div>
+              <div>
+                <span>접경 행정동</span>
+                <strong>{nationalStats.playerFrontlines.toLocaleString()}</strong>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {game && game.events.length > 0 && game.phase !== 'setup' && (
+          <section className="card event-card">
+            <div className="event-heading">
+              <p className="section-label">최근 상황</p>
+              <span>{game.events.length}건 기록</span>
+            </div>
+            <div className="event-list">
+              {game.events.slice(0, 12).map((event) => (
+                <div key={event.id} className={`event-row ${event.kind}`}>
+                  <span>T{event.tick}</span>
+                  <p>{event.message}</p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {game && (

@@ -2,11 +2,19 @@ export type FactionId = 'player' | 'red' | 'blue' | 'green' | 'neutral'
 export type GamePhase = 'setup' | 'running' | 'victory' | 'defeat'
 export type Difficulty = 'easy' | 'normal' | 'hard'
 export type AiCount = 1 | 2 | 3
+export type GameEventKind = 'system' | 'capture' | 'defense'
 
 export interface Faction {
   id: FactionId
   name: string
   color: string
+}
+
+export interface GameEvent {
+  id: string
+  tick: number
+  kind: GameEventKind
+  message: string
 }
 
 export interface TerritoryState {
@@ -30,6 +38,7 @@ export interface GameState {
   aiCount: AiCount
   difficulty: Difficulty
   dataVersion: string
+  events: GameEvent[]
   territories: Record<string, TerritoryState>
 }
 

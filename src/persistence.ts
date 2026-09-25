@@ -2,6 +2,7 @@ import type {
   AiCount,
   Difficulty,
   FactionId,
+  GameEvent,
   GamePhase,
   GameState,
 } from './types'
@@ -18,7 +19,7 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1 | 2
+  schema: 1 | 2 | 3
   savedAt: number
   tick: number
   speed: 1 | 2 | 4
@@ -28,6 +29,7 @@ type SavedGame = {
   dataVersion: string
   aiCount?: AiCount
   difficulty?: Difficulty
+  events?: GameEvent[]
   territories: Record<string, SavedTerritory>
 }
 
@@ -57,7 +59,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 2,
+    schema: 3,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -67,6 +69,7 @@ export function saveGame(state: GameState): number {
     dataVersion: state.dataVersion,
     aiCount: state.aiCount,
     difficulty: state.difficulty,
+    events: state.events.slice(0, 40),
     territories,
   }
 
@@ -92,7 +95,7 @@ export function restoreGame(base: GameState): GameState | null {
 
     const saved = JSON.parse(raw) as Partial<SavedGame>
     if (
-      (saved.schema !== 1 && saved.schema !== 2) ||
+      (saved.schema !== 1 && saved.schema !== 2 && saved.schema !== 3) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -152,6 +155,7 @@ export function restoreGame(base: GameState): GameState | null {
           : base.playerName,
       aiCount: isAiCount(saved.aiCount) ? saved.aiCount : base.aiCount,
       difficulty,
+      events: Array.isArray(saved.events) ? saved.events.slice(0, 40) : base.events,
       territories,
     }
   } catch {
