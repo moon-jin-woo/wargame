@@ -1,5 +1,7 @@
 export type FactionId = 'player' | 'red' | 'blue' | 'green' | 'neutral'
 export type GamePhase = 'setup' | 'running' | 'victory' | 'defeat'
+export type Difficulty = 'easy' | 'normal' | 'hard'
+export type AiCount = 1 | 2 | 3
 
 export interface Faction {
   id: FactionId
@@ -25,6 +27,8 @@ export interface GameState {
   tick: number
   selectedId: string | null
   playerName: string
+  aiCount: AiCount
+  difficulty: Difficulty
   dataVersion: string
   territories: Record<string, TerritoryState>
 }

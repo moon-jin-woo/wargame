@@ -5,16 +5,25 @@ import {
   advanceTick,
   captureTerritory,
   createInitialState,
+  difficultyLabels,
   factions,
   ownerCounts,
   startGame,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
-import type { AdminMapData, FactionId, GameState, TerritoryState } from './types'
+import type {
+  AdminMapData,
+  AiCount,
+  Difficulty,
+  FactionId,
+  GameState,
+  TerritoryState,
+} from './types'
 
 const SOURCE_ID = 'admin-dongs'
 const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
+const LABEL_LAYER_ID = 'admin-dongs-label'
 
 function ownerName(owner: FactionId, game: GameState): string {
   return owner === 'player' ? game.playerName : factions[owner].name
@@ -25,6 +34,7 @@ function App() {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousTerritories = useRef<Record<string, TerritoryState>>({})
   const previousSelected = useRef<string | null>(null)
+  const previousFrontlines = useRef<Record<string, boolean>>({})
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -41,6 +51,7 @@ function App() {
       container: mapContainer.current,
       style: {
         version: 8,
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {
           osm: {
             type: 'raster',
@@ -145,15 +156,47 @@ function App() {
           'case',
           ['boolean', ['feature-state', 'selected'], false],
           '#ffffff',
+          ['boolean', ['feature-state', 'frontline'], false],
+          '#d9a05a',
           '#26313d',
         ],
         'line-width': [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
           2.8,
+          ['boolean', ['feature-state', 'frontline'], false],
+          1.35,
           0.65,
         ],
         'line-opacity': 0.9,
+      },
+    })
+
+    map.addLayer({
+      id: LABEL_LAYER_ID,
+      type: 'symbol',
+      source: SOURCE_ID,
+      minzoom: 8.7,
+      layout: {
+        'text-field': ['get', 'emdnm'],
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          8.7,
+          9,
+          11,
+          12,
+        ],
+        'text-font': ['Open Sans Regular'],
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+      },
+      paint: {
+        'text-color': '#e8eef5',
+        'text-halo-color': '#111820',
+        'text-halo-width': 1.2,
+        'text-halo-blur': 0.4,
       },
     })
 
@@ -176,6 +219,7 @@ function App() {
     map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
 
     previousTerritories.current = {}
+    previousFrontlines.current = {}
     previousSelected.current = null
     setLayerReady(true)
 
@@ -191,16 +235,32 @@ function App() {
     if (!map || !layerReady || !game) return
 
     for (const [id, territory] of Object.entries(game.territories)) {
-      if (previousTerritories.current[id] === territory) continue
+      if (previousTerritories.current[id] !== territory) {
+        map.setFeatureState(
+          { source: SOURCE_ID, id },
+          {
+            owner: territory.owner,
+            troops: territory.troops,
+            supply: territory.supply,
+          },
+        )
+      }
 
-      map.setFeatureState(
-        { source: SOURCE_ID, id },
-        {
-          owner: territory.owner,
-          troops: territory.troops,
-          supply: territory.supply,
-        },
-      )
+      const frontline =
+        territory.owner !== 'neutral' &&
+        territory.neighbors.some(
+          (neighborId) =>
+            game.territories[neighborId] &&
+            game.territories[neighborId].owner !== territory.owner,
+        )
+
+      if (previousFrontlines.current[id] !== frontline) {
+        map.setFeatureState(
+          { source: SOURCE_ID, id },
+          { frontline },
+        )
+        previousFrontlines.current[id] = frontline
+      }
     }
 
     previousTerritories.current = game.territories
@@ -275,6 +335,20 @@ function App() {
     })
   }
 
+  const handleNewGame = () => {
+    if (!adminData) return
+    const next = createInitialState(adminData.territories, adminData.version)
+    setGame((previous) => ({
+      ...next,
+      playerName: previous?.playerName ?? next.playerName,
+      aiCount: previous?.aiCount ?? next.aiCount,
+      difficulty: previous?.difficulty ?? next.difficulty,
+      selectedId: previous?.selectedId && next.territories[previous.selectedId]
+        ? previous.selectedId
+        : next.selectedId,
+    }))
+  }
+
   const selectTerritory = (territory: TerritoryState) => {
     setGame((previous) => (previous ? { ...previous, selectedId: territory.id } : previous))
     mapRef.current?.easeTo({
@@ -346,7 +420,38 @@ function App() {
               </button>
             </>
           )}
+
+          {game && game.phase !== 'setup' && (
+            <button onClick={handleNewGame}>새 게임</button>
+          )}
         </div>
+
+        {game && counts && game.phase !== 'setup' && total > 0 && (
+          <div className="situation-panel">
+            <div className="situation-meta">
+              <strong>전국 전황</strong>
+              <span>
+                {difficultyLabels[game.difficulty]} · AI {game.aiCount}개 · Tick {game.tick}
+              </span>
+            </div>
+            <div className="situation-bar">
+              {(Object.keys(factions) as FactionId[]).map((id) => {
+                const width = (counts[id] / total) * 100
+                if (width <= 0) return null
+                return (
+                  <span
+                    key={id}
+                    title={`${ownerName(id, game)}: ${counts[id].toLocaleString()}개`}
+                    style={{
+                      width: `${width}%`,
+                      background: factions[id].color,
+                    }}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {!game && !loadingError && (
           <div className="loading-card">
@@ -433,8 +538,47 @@ function App() {
                 }
               />
             </label>
+
+            <div className="setup-options">
+              <label>
+                상대 AI
+                <select
+                  value={game.aiCount}
+                  onChange={(event) =>
+                    setGame((previous) =>
+                      previous
+                        ? { ...previous, aiCount: Number(event.target.value) as AiCount }
+                        : previous,
+                    )
+                  }
+                >
+                  <option value={1}>1개 세력</option>
+                  <option value={2}>2개 세력</option>
+                  <option value={3}>3개 세력</option>
+                </select>
+              </label>
+
+              <label>
+                난이도
+                <select
+                  value={game.difficulty}
+                  onChange={(event) =>
+                    setGame((previous) =>
+                      previous
+                        ? { ...previous, difficulty: event.target.value as Difficulty }
+                        : previous,
+                    )
+                  }
+                >
+                  <option value="easy">쉬움</option>
+                  <option value="normal">보통</option>
+                  <option value="hard">어려움</option>
+                </select>
+              </label>
+            </div>
+
             <p className="muted">
-              지도에서 원하는 행정동을 고른 뒤 시작하세요. AI 세력은 선택한 지역과 서로 멀리 떨어진 곳에 자동 배치됩니다.
+              지도에서 원하는 행정동을 고른 뒤 시작하세요. AI 세력은 시작 지역과 서로 멀리 떨어진 곳에 자동 배치되며, 난이도는 AI의 공격 빈도와 목표 선택에 영향을 줍니다.
             </p>
             <button
               className="primary"
@@ -453,6 +597,7 @@ function App() {
           <div className="result-card">
             <strong>전국 점령 완료</strong>
             <span>{game.tick.toLocaleString()}틱 만에 모든 행정동을 확보했습니다.</span>
+            <button className="secondary" onClick={handleNewGame}>새 게임 시작</button>
           </div>
         )}
 
@@ -460,6 +605,7 @@ function App() {
           <div className="result-card defeat">
             <strong>세력 소멸</strong>
             <span>플레이어가 보유한 행정동이 없습니다.</span>
+            <button className="secondary" onClick={handleNewGame}>다시 시작</button>
           </div>
         )}
 
@@ -479,6 +625,12 @@ function App() {
             </div>
 
             <p className="full-name">{selected.fullName}</p>
+            {game.phase === 'running' &&
+              selected.owner !== 'neutral' &&
+              selected.neighbors.some(
+                (neighborId) =>
+                  game.territories[neighborId]?.owner !== selected.owner,
+              ) && <span className="frontline-chip">접경 지역</span>}
 
             <div className="metric-grid">
               <div>
