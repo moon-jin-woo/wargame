@@ -1,80 +1,284 @@
-import type { DongState, Faction, GameState } from './types'
+import type { Faction, FactionId, GameState, TerritoryState } from './types'
 
-export const factions: Record<Faction['id'], Faction> = {
+export const factions: Record<FactionId, Faction> = {
   player: { id: 'player', name: '플레이어', color: '#2f7df6' },
-  red: { id: 'red', name: '적색 세력', color: '#d84a4a' },
-  blue: { id: 'blue', name: '청색 세력', color: '#6457d9' },
-  neutral: { id: 'neutral', name: '중립', color: '#777777' },
+  red: { id: 'red', name: '적색 세력', color: '#d65757' },
+  blue: { id: 'blue', name: '청색 세력', color: '#7066dc' },
+  green: { id: 'green', name: '녹색 세력', color: '#3f9b73' },
+  neutral: { id: 'neutral', name: '중립', color: '#6f7782' },
 }
 
-const sampleDongs: DongState[] = [
-  { id: 'seoul', name: '서울 중심권', owner: 'player', troops: 120, supply: 100, neighbors: ['incheon', 'suwon'] },
-  { id: 'incheon', name: '인천권', owner: 'red', troops: 90, supply: 80, neighbors: ['seoul', 'suwon'] },
-  { id: 'suwon', name: '수원권', owner: 'neutral', troops: 35, supply: 60, neighbors: ['seoul', 'incheon', 'daejeon'] },
-  { id: 'daejeon', name: '대전권', owner: 'blue', troops: 75, supply: 85, neighbors: ['suwon', 'daegu', 'gwangju'] },
-  { id: 'daegu', name: '대구권', owner: 'neutral', troops: 50, supply: 70, neighbors: ['daejeon', 'busan'] },
-  { id: 'gwangju', name: '광주권', owner: 'red', troops: 65, supply: 75, neighbors: ['daejeon', 'busan'] },
-  { id: 'busan', name: '부산권', owner: 'blue', troops: 95, supply: 90, neighbors: ['daegu', 'gwangju'] },
-]
+const aiFactions: FactionId[] = ['red', 'blue', 'green']
 
-export function createInitialState(): GameState {
+function hashString(value: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function distanceSquared(a: [number, number], b: [number, number]): number {
+  const latScale = Math.cos(((a[1] + b[1]) * Math.PI) / 360)
+  const dx = (a[0] - b[0]) * latScale
+  const dy = a[1] - b[1]
+  return dx * dx + dy * dy
+}
+
+export function createInitialState(
+  territories: Record<string, TerritoryState>,
+  dataVersion: string,
+): GameState {
+  const firstId = Object.keys(territories)[0] ?? null
+
   return {
-    running: true,
+    phase: 'setup',
+    running: false,
     speed: 1,
     tick: 0,
-    selectedDongId: 'seoul',
-    dongs: Object.fromEntries(sampleDongs.map((dong) => [dong.id, dong])),
+    selectedId: firstId,
+    playerName: '플레이어 세력',
+    dataVersion,
+    territories,
   }
 }
 
-export function advanceTick(state: GameState): GameState {
-  const nextDongs = Object.fromEntries(
-    Object.entries(state.dongs).map(([id, dong]) => {
-      const growth = dong.owner === 'neutral' ? 0 : 1
-      const supplyDelta = dong.owner === 'neutral' ? 0 : 0.25
-      return [
-        id,
-        {
-          ...dong,
-          troops: Math.min(999, dong.troops + growth),
-          supply: Math.min(100, dong.supply + supplyDelta),
-        },
-      ]
-    }),
-  )
+function chooseFarthestSeed(
+  territories: Record<string, TerritoryState>,
+  anchors: string[],
+  reserved: Set<string>,
+): string | null {
+  let bestId: string | null = null
+  let bestScore = -1
 
-  return { ...state, tick: state.tick + 1, dongs: nextDongs }
+  for (const territory of Object.values(territories)) {
+    if (reserved.has(territory.id)) continue
+
+    let minDistance = Number.POSITIVE_INFINITY
+    for (const anchorId of anchors) {
+      const anchor = territories[anchorId]
+      if (!anchor) continue
+      minDistance = Math.min(minDistance, distanceSquared(territory.centroid, anchor.centroid))
+    }
+
+    if (minDistance > bestScore) {
+      bestScore = minDistance
+      bestId = territory.id
+    }
+  }
+
+  return bestId
 }
 
-export function attack(state: GameState, fromId: string, toId: string): GameState {
-  const from = state.dongs[fromId]
-  const to = state.dongs[toId]
+function claimCluster(
+  territories: Record<string, TerritoryState>,
+  seedId: string,
+  owner: FactionId,
+  reserved: Set<string>,
+): Record<string, TerritoryState> {
+  const next = { ...territories }
+  const seed = next[seedId]
+  if (!seed) return next
 
-  if (!from || !to || !from.neighbors.includes(toId) || from.owner !== 'player' || from.troops < 20) {
+  const cluster = [seedId, ...seed.neighbors.slice(0, 4)]
+
+  cluster.forEach((id, index) => {
+    const territory = next[id]
+    if (!territory || (reserved.has(id) && id !== seedId)) return
+
+    reserved.add(id)
+    next[id] = {
+      ...territory,
+      owner,
+      troops: index === 0 ? 85 : 48,
+      supply: index === 0 ? 92 : 78,
+    }
+  })
+
+  return next
+}
+
+export function startGame(state: GameState, startId: string): GameState {
+  if (!state.territories[startId]) return state
+
+  let territories = Object.fromEntries(
+    Object.entries(state.territories).map(([id, territory]) => [
+      id,
+      {
+        ...territory,
+        owner: 'neutral' as FactionId,
+        troops: Math.min(territory.troops, 35),
+        supply: 55,
+      },
+    ]),
+  )
+
+  const reserved = new Set<string>()
+  const seeds = [startId]
+
+  territories = claimCluster(territories, startId, 'player', reserved)
+
+  for (const faction of aiFactions) {
+    const seed = chooseFarthestSeed(territories, seeds, reserved)
+    if (!seed) continue
+    seeds.push(seed)
+    territories = claimCluster(territories, seed, faction, reserved)
+  }
+
+  return {
+    ...state,
+    phase: 'running',
+    running: true,
+    tick: 0,
+    selectedId: startId,
+    territories,
+  }
+}
+
+function resolveCapture(
+  state: GameState,
+  fromId: string,
+  toId: string,
+  owner: FactionId,
+): GameState {
+  const from = state.territories[fromId]
+  const to = state.territories[toId]
+
+  if (
+    !from ||
+    !to ||
+    from.owner !== owner ||
+    to.owner === owner ||
+    !from.neighbors.includes(toId) ||
+    from.troops < 18
+  ) {
     return state
   }
 
-  const committed = Math.floor(from.troops * 0.45)
-  const attackPower = committed * (0.75 + from.supply / 200)
-  const defensePower = to.troops * (0.85 + to.supply / 250)
-  const won = attackPower > defensePower
+  const committed = Math.max(8, Math.floor(from.troops * 0.38))
+  const variation = 0.9 + (hashString(`${fromId}:${toId}:${state.tick}`) % 21) / 100
+  const captureScore = committed * (0.8 + from.supply / 220) * variation
+  const holdScore = to.troops * (0.72 + to.supply / 260)
+  const success = captureScore > holdScore
 
-  const dongs = { ...state.dongs }
-  dongs[fromId] = { ...from, troops: Math.max(10, from.troops - committed) }
+  const territories = { ...state.territories }
+  territories[fromId] = {
+    ...from,
+    troops: Math.max(10, from.troops - committed),
+    supply: Math.max(20, from.supply - 4),
+  }
 
-  if (won) {
-    dongs[toId] = {
+  if (success) {
+    territories[toId] = {
       ...to,
-      owner: 'player',
-      troops: Math.max(10, Math.floor(committed - defensePower * 0.6)),
-      supply: Math.max(25, Math.floor(to.supply * 0.6)),
+      owner,
+      troops: Math.max(10, Math.floor(committed - holdScore * 0.45)),
+      supply: Math.max(35, Math.floor((from.supply + to.supply) / 2)),
     }
   } else {
-    dongs[toId] = {
+    territories[toId] = {
       ...to,
-      troops: Math.max(5, Math.floor(to.troops - attackPower * 0.4)),
+      troops: Math.max(8, Math.floor(to.troops - captureScore * 0.3)),
+      supply: Math.max(25, to.supply - 2),
     }
   }
 
-  return { ...state, dongs, selectedDongId: toId }
+  return {
+    ...state,
+    selectedId: owner === 'player' ? toId : state.selectedId,
+    territories,
+  }
+}
+
+export function captureTerritory(state: GameState, fromId: string, toId: string): GameState {
+  if (state.phase !== 'running') return state
+  return resolveCapture(state, fromId, toId, 'player')
+}
+
+function runAiTurn(state: GameState, owner: FactionId): GameState {
+  const candidates = Object.values(state.territories).filter(
+    (territory) =>
+      territory.owner === owner &&
+      territory.troops >= 28 &&
+      territory.neighbors.some((id) => state.territories[id]?.owner !== owner),
+  )
+
+  if (candidates.length === 0) return state
+
+  const from = candidates[hashString(`${owner}:${state.tick}`) % candidates.length]
+  const targets = from.neighbors
+    .map((id) => state.territories[id])
+    .filter((territory): territory is TerritoryState => Boolean(territory && territory.owner !== owner))
+
+  if (targets.length === 0) return state
+
+  const to = targets[hashString(`${from.id}:${state.tick}`) % targets.length]
+  return resolveCapture(state, from.id, to.id, owner)
+}
+
+function updatePhase(state: GameState): GameState {
+  const values = Object.values(state.territories)
+  const playerOwned = values.filter((territory) => territory.owner === 'player').length
+
+  if (playerOwned === values.length && values.length > 0) {
+    return { ...state, phase: 'victory', running: false }
+  }
+
+  if (playerOwned === 0 && state.phase === 'running') {
+    return { ...state, phase: 'defeat', running: false }
+  }
+
+  return state
+}
+
+export function advanceTick(state: GameState): GameState {
+  if (!state.running || state.phase !== 'running') return state
+
+  const nextTick = state.tick + 1
+  let territories = state.territories
+
+  if (nextTick % 2 === 0) {
+    territories = { ...territories }
+
+    for (const [id, territory] of Object.entries(territories)) {
+      if (territory.owner === 'neutral') continue
+
+      territories[id] = {
+        ...territory,
+        troops: Math.min(160, territory.troops + 1),
+        supply: Math.min(100, territory.supply + 0.6),
+      }
+    }
+  }
+
+  let next: GameState = {
+    ...state,
+    tick: nextTick,
+    territories,
+  }
+
+  if (nextTick % 3 === 0) {
+    for (const faction of aiFactions) {
+      next = runAiTurn(next, faction)
+    }
+  }
+
+  return updatePhase(next)
+}
+
+export function ownerCounts(state: GameState): Record<FactionId, number> {
+  const counts: Record<FactionId, number> = {
+    player: 0,
+    red: 0,
+    blue: 0,
+    green: 0,
+    neutral: 0,
+  }
+
+  for (const territory of Object.values(state.territories)) {
+    counts[territory.owner] += 1
+  }
+
+  return counts
 }
