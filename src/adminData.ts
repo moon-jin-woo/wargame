@@ -1,4 +1,3 @@
-import * as adk from 'admdongkor'
 import type { AdminMapData, TerritoryState } from './types'
 
 type Position = [number, number]
@@ -185,9 +184,34 @@ function hashString(value: string): number {
 }
 
 export async function loadLatestAdminDongs(): Promise<AdminMapData> {
-  const versions = adk.versions()
-  const version = versions[versions.length - 1]
-  const raw = (await adk.get(version, 'emd', { detail: false })) as unknown as AdmFeatureCollection
+  const base = import.meta.env.BASE_URL
+  const [dataResponse, metaResponse] = await Promise.all([
+    fetch(`${base}data/admin-dongs.geojson`, { cache: 'no-cache' }),
+    fetch(`${base}data/admin-dongs-meta.json`, { cache: 'no-cache' }),
+  ])
+
+  if (!dataResponse.ok) {
+    throw new Error(
+      `행정동 지도 데이터 로딩 실패: ${dataResponse.status} ${dataResponse.statusText}`,
+    )
+  }
+
+  if (!metaResponse.ok) {
+    throw new Error(
+      `행정동 메타데이터 로딩 실패: ${metaResponse.status} ${metaResponse.statusText}`,
+    )
+  }
+
+  const raw = (await dataResponse.json()) as AdmFeatureCollection
+  const meta = (await metaResponse.json()) as {
+    version?: string
+    featureCount?: number
+  }
+  const version = meta.version || 'unknown'
+
+  if (!raw || raw.type !== 'FeatureCollection' || !Array.isArray(raw.features)) {
+    throw new Error('행정동 GeoJSON 형식이 올바르지 않습니다.')
+  }
 
   const usable = raw.features.filter(
     (feature) =>
