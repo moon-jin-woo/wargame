@@ -4,7 +4,7 @@ export type PlayableFactionId = 'player' | AiFactionId
 export type GamePhase = 'setup' | 'running' | 'victory' | 'defeat'
 export type Difficulty = 'easy' | 'normal' | 'hard'
 export type AiCount = 1 | 2 | 3
-export type GameEventKind = 'system' | 'capture' | 'defense'
+export type GameEventKind = 'system' | 'capture' | 'defense' | 'support'
 
 export interface Faction {
   id: FactionId
