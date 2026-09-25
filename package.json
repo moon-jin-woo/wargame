@@ -11,7 +11,7 @@
     "prepare:data": "node scripts/prepare-admin-data.mjs"
   },
   "dependencies": {
-    "admdongkor": "^0.5.2",
+    "admdongkor": "0.5.1",
     "maplibre-gl": "^6.11.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
