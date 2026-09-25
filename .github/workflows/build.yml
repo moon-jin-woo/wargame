@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "feature/**"
+      - "fix/**"
   pull_request:
 
 jobs:
@@ -27,3 +28,10 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Upload built site
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-dist
+          path: dist
+          if-no-files-found: error
