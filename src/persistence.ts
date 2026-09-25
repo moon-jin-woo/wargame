@@ -1,6 +1,8 @@
 import type {
   AiCount,
+  AiFactionId,
   Difficulty,
+  PlayableFactionId,
   FactionId,
   GameEvent,
   GamePhase,
@@ -19,7 +21,7 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3
+  schema: 1 | 2 | 3 | 4
   savedAt: number
   tick: number
   speed: 1 | 2 | 4
@@ -29,6 +31,8 @@ type SavedGame = {
   dataVersion: string
   aiCount?: AiCount
   difficulty?: Difficulty
+  aiNames?: Record<AiFactionId, string>
+  factionColors?: Record<PlayableFactionId, string>
   events?: GameEvent[]
   territories: Record<string, SavedTerritory>
 }
@@ -59,7 +63,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 3,
+    schema: 4,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -69,6 +73,8 @@ export function saveGame(state: GameState): number {
     dataVersion: state.dataVersion,
     aiCount: state.aiCount,
     difficulty: state.difficulty,
+    aiNames: state.aiNames,
+    factionColors: state.factionColors,
     events: state.events.slice(0, 40),
     territories,
   }
@@ -95,7 +101,10 @@ export function restoreGame(base: GameState): GameState | null {
 
     const saved = JSON.parse(raw) as Partial<SavedGame>
     if (
-      (saved.schema !== 1 && saved.schema !== 2 && saved.schema !== 3) ||
+      (saved.schema !== 1 &&
+        saved.schema !== 2 &&
+        saved.schema !== 3 &&
+        saved.schema !== 4) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -139,6 +148,22 @@ export function restoreGame(base: GameState): GameState | null {
       ? (saved.difficulty as Difficulty)
       : base.difficulty
 
+    const aiNames = { ...base.aiNames }
+    for (const id of ['red', 'blue', 'green'] as AiFactionId[]) {
+      const value = saved.aiNames?.[id]
+      if (typeof value === 'string' && value.trim()) {
+        aiNames[id] = value.trim().slice(0, 24)
+      }
+    }
+
+    const factionColors = { ...base.factionColors }
+    for (const id of ['player', 'red', 'blue', 'green'] as PlayableFactionId[]) {
+      const value = saved.factionColors?.[id]
+      if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) {
+        factionColors[id] = value
+      }
+    }
+
     return {
       ...base,
       phase,
@@ -155,6 +180,8 @@ export function restoreGame(base: GameState): GameState | null {
           : base.playerName,
       aiCount: isAiCount(saved.aiCount) ? saved.aiCount : base.aiCount,
       difficulty,
+      aiNames,
+      factionColors,
       events: Array.isArray(saved.events) ? saved.events.slice(0, 40) : base.events,
       territories,
     }

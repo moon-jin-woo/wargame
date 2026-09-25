@@ -217,6 +217,8 @@ export async function loadLatestAdminDongs(): Promise<AdminMapData> {
       id,
       name: emdnm,
       fullName: [sidonm, sggnm, emdnm].filter(Boolean).join(' '),
+      sidoName: sidonm,
+      sggName: sggnm,
       owner: 'neutral',
       troops: baseTroops,
       supply: 55,

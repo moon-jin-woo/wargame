@@ -746,3 +746,118 @@ button {
 .event-row.system {
   border-left: 2px solid #6088bd;
 }
+
+
+.setup-subtitle {
+  margin: 0 0 8px;
+  color: #91a0b0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.faction-customization {
+  padding: 10px;
+  border: 1px solid #28333f;
+  border-radius: 8px;
+  background: #10161c;
+}
+
+.faction-setting-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 7px;
+  transition: opacity 120ms ease;
+}
+
+.faction-setting-row:last-child {
+  margin-bottom: 0;
+}
+
+.faction-setting-row.inactive {
+  opacity: 0.42;
+}
+
+.faction-setting-row > span {
+  color: #8192a3;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.faction-setting-row input:not(.color-input) {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid #33404e;
+  border-radius: 6px;
+  outline: none;
+  background: #0d1319;
+  color: #edf2f7;
+  font-size: 11px;
+}
+
+.faction-setting-row input:not(.color-input):focus {
+  border-color: #6d8198;
+}
+
+.color-input {
+  width: 38px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid #33404e;
+  border-radius: 6px;
+  background: #0d1319;
+  cursor: pointer;
+}
+
+.regional-stats {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #27323d;
+  border-radius: 8px;
+  background: #10161c;
+}
+
+.regional-stat-row {
+  display: grid;
+  gap: 5px;
+}
+
+.regional-stat-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.regional-stat-meta span {
+  overflow: hidden;
+  color: #91a0af;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.regional-stat-meta strong {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.regional-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #27313b;
+}
+
+.regional-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 180ms ease;
+}

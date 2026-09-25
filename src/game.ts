@@ -1,5 +1,6 @@
 import type {
   AiCount,
+  AiFactionId,
   Difficulty,
   Faction,
   FactionId,
@@ -22,14 +23,16 @@ export const difficultyLabels: Record<Difficulty, string> = {
   hard: '어려움',
 }
 
-const aiFactions: FactionId[] = ['red', 'blue', 'green']
+const aiFactions: AiFactionId[] = ['red', 'blue', 'green']
 
-function activeAiFactions(count: AiCount): FactionId[] {
+function activeAiFactions(count: AiCount): AiFactionId[] {
   return aiFactions.slice(0, count)
 }
 
 function actorName(state: GameState, owner: FactionId): string {
-  return owner === 'player' ? state.playerName : factions[owner].name
+  if (owner === 'player') return state.playerName
+  if (owner === 'neutral') return factions.neutral.name
+  return state.aiNames[owner]
 }
 
 function withEvent(
@@ -79,6 +82,17 @@ export function createInitialState(
     tick: 0,
     selectedId: firstId,
     playerName: '플레이어 세력',
+    aiNames: {
+      red: '적색 세력',
+      blue: '청색 세력',
+      green: '녹색 세력',
+    },
+    factionColors: {
+      player: '#2f7df6',
+      red: '#d65757',
+      blue: '#7066dc',
+      green: '#3f9b73',
+    },
     aiCount: 3,
     difficulty: 'normal',
     dataVersion,
