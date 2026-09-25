@@ -358,6 +358,43 @@ function App() {
     }
   }, [game, counts, total])
 
+  const regionalStats = useMemo(() => {
+    if (!game || !selected) return null
+
+    const summarize = (territories: TerritoryState[]) => {
+      const totalCount = territories.length
+      const playerCount = territories.filter(
+        (territory) => territory.owner === 'player',
+      ).length
+
+      return {
+        total: totalCount,
+        player: playerCount,
+        share: totalCount > 0 ? (playerCount / totalCount) * 100 : 0,
+      }
+    }
+
+    const provinceTerritories = Object.values(game.territories).filter(
+      (territory) => territory.sidoName === selected.sidoName,
+    )
+    const districtTerritories = Object.values(game.territories).filter(
+      (territory) =>
+        territory.sidoName === selected.sidoName &&
+        territory.sggName === selected.sggName,
+    )
+
+    return {
+      province: {
+        name: selected.sidoName,
+        ...summarize(provinceTerritories),
+      },
+      district: {
+        name: selected.sggName,
+        ...summarize(districtTerritories),
+      },
+    }
+  }, [game, selected])
+
   const focusSelected = () => {
     if (!selected || !mapRef.current) return
     mapRef.current.easeTo({
@@ -845,6 +882,30 @@ function App() {
                 <strong>{selected.neighbors.length}</strong>
               </div>
             </div>
+
+            {regionalStats && (
+              <div className="regional-stats">
+                {[regionalStats.province, regionalStats.district].map((region) => (
+                  <div key={region.name || '미지정'} className="regional-stat-row">
+                    <div className="regional-stat-meta">
+                      <span>{region.name || '구역 미지정'}</span>
+                      <strong>
+                        {region.player.toLocaleString()} / {region.total.toLocaleString()}
+                        {' '}({region.share.toFixed(1)}%)
+                      </strong>
+                    </div>
+                    <div className="regional-progress">
+                      <i
+                        style={{
+                          width: `${region.share}%`,
+                          background: ownerColor('player', game),
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <button className="secondary" onClick={focusSelected}>
               지도에서 확대
