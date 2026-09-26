@@ -2141,3 +2141,38 @@ body {
     transform: none;
   }
 }
+
+
+.map-mode-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 118px;
+  z-index: 10;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: 4px;
+  background: rgba(16, 18, 18, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.map-mode-legend strong {
+  color: var(--ops-brass);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.map-mode-legend span {
+  color: #96978f;
+  font-size: 8px;
+}
+
+@media (max-width: 620px) {
+  .map-mode-legend {
+    right: 8px;
+    bottom: 116px;
+    left: 8px;
+  }
+}
