@@ -83,6 +83,12 @@ function activeAiFactions(count: AiCount): AiFactionId[] {
   return aiFactions.slice(0, count)
 }
 
+function stanceForAi(state: GameState): AttackStance {
+  if (state.difficulty === 'easy') return 'cautious'
+  if (state.difficulty === 'hard') return 'aggressive'
+  return 'balanced'
+}
+
 function actorName(state: GameState, owner: FactionId): string {
   if (owner === 'player') return state.playerName.trim() || '플레이어'
   if (owner === 'neutral') return factions.neutral.name
