@@ -12,6 +12,7 @@ import type {
   GameEventKind,
   GameState,
   IndustryType,
+  NationalStrategy,
   PlayableFactionId,
   ProductionKind,
   ProductionOrder,
@@ -269,6 +270,86 @@ export const technologyDefinitions: Record<TechnologyId, TechnologyDefinition> =
     costGrowth: 85,
     prerequisites: { fieldEngineering: 1, railOperations: 1 },
   },
+  industrialAutomation: {
+    id: 'industrialAutomation',
+    label: '산업 자동화',
+    category: 'industry',
+    description: '후반 산업 수익과 사단 생산 효율을 추가로 높입니다.',
+    maxLevel: 3,
+    baseCost: 205,
+    costGrowth: 95,
+    prerequisites: { massProduction: 1, constructionEngineering: 2 },
+  },
+  regionalPlanning: {
+    id: 'regionalPlanning',
+    label: '권역 개발 계획',
+    category: 'industry',
+    description: '인프라가 건설과 지역 생산에 주는 효과를 강화합니다.',
+    maxLevel: 2,
+    baseCost: 185,
+    costGrowth: 90,
+    prerequisites: { constructionEngineering: 2 },
+  },
+  networkScheduling: {
+    id: 'networkScheduling',
+    label: '철도망 운행 계획',
+    category: 'logistics',
+    description: '연결 철도망의 이동·보급 효율을 정교하게 개선합니다.',
+    maxLevel: 3,
+    baseCost: 195,
+    costGrowth: 90,
+    prerequisites: { railOperations: 2, supplyOptimization: 1 },
+  },
+  depotManagement: {
+    id: 'depotManagement',
+    label: '보급 거점 관리',
+    category: 'logistics',
+    description: '물류센터와 지역 보급 회복의 효율을 높입니다.',
+    maxLevel: 2,
+    baseCost: 180,
+    costGrowth: 90,
+    prerequisites: { supplyOptimization: 1 },
+  },
+  armyGroupCommand: {
+    id: 'armyGroupCommand',
+    label: '집단 지휘 체계',
+    category: 'command',
+    description: '다수 군단의 계획 준비도와 지휘 보정을 강화합니다.',
+    maxLevel: 3,
+    baseCost: 210,
+    costGrowth: 100,
+    prerequisites: { staffCoordination: 1, operationalPlanning: 2 },
+  },
+  rapidRedeployment: {
+    id: 'rapidRedeployment',
+    label: '신속 재배치',
+    category: 'command',
+    description: '아군 지역에서 사단 이동과 작전 전환을 빠르게 합니다.',
+    maxLevel: 2,
+    baseCost: 190,
+    costGrowth: 95,
+    prerequisites: { commandNetwork: 2, mobilityEngineering: 1 },
+  },
+  terrainAdaptation: {
+    id: 'terrainAdaptation',
+    label: '지형 적응',
+    category: 'engineering',
+    description: '불리한 지형의 이동·공세 패널티를 완화합니다.',
+    maxLevel: 3,
+    baseCost: 195,
+    costGrowth: 95,
+    prerequisites: { mobilityEngineering: 1, fieldEngineering: 2 },
+  },
+  civilEngineering: {
+    id: 'civilEngineering',
+    label: '토목 체계화',
+    category: 'engineering',
+    description: '철도·인프라·방어 공사의 건설 시간을 추가 단축합니다.',
+    maxLevel: 2,
+    baseCost: 175,
+    costGrowth: 90,
+    prerequisites: { constructionEngineering: 1, fieldEngineering: 1 },
+  },
 }
 
 export const technologyLabels: Record<TechnologyId, string> = Object.fromEntries(
@@ -372,6 +453,99 @@ const strategyPreparation: Record<StrategyDoctrine, number> = {
   concentrated: 1.08,
   defensive: 1.04,
   logistics: 1.02,
+}
+
+export const nationalStrategyLabels: Record<NationalStrategy, string> = {
+  balancedDevelopment: '균형 개발',
+  industrialPush: '산업 총동원',
+  railwayPriority: '철도망 우선',
+  mobileCommand: '기동 지휘',
+  fortifiedState: '요새화 방어',
+  researchInitiative: '연구 주도',
+}
+
+export const nationalStrategyDescriptions: Record<NationalStrategy, string> = {
+  balancedDevelopment: '경제·보급·군사에 별도 패널티 없는 균형형 국가 운영입니다.',
+  industrialPush: '민수 수익과 생산 속도를 높이는 대신 보급 회복이 소폭 감소합니다.',
+  railwayPriority: '철도 건설·철도 보급·철도 이동에 집중합니다.',
+  mobileCommand: '군단 준비도와 이동 속도를 높이는 대신 지역 방어가 소폭 낮아집니다.',
+  fortifiedState: '지역 방어와 참호화를 강화하지만 이동과 공세 준비가 느려집니다.',
+  researchInitiative: '연구점수 생산을 높이는 대신 현재 자금 수익이 소폭 감소합니다.',
+}
+
+const nationalIncome: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 1.12,
+  railwayPriority: 0.98,
+  mobileCommand: 0.97,
+  fortifiedState: 0.96,
+  researchInitiative: 0.93,
+}
+
+const nationalResearch: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 0.96,
+  railwayPriority: 1,
+  mobileCommand: 1,
+  fortifiedState: 0.98,
+  researchInitiative: 1.24,
+}
+
+const nationalMove: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 1.02,
+  railwayPriority: 0.96,
+  mobileCommand: 0.91,
+  fortifiedState: 1.08,
+  researchInitiative: 1.01,
+}
+
+const nationalDefense: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 0.98,
+  railwayPriority: 1,
+  mobileCommand: 0.96,
+  fortifiedState: 1.14,
+  researchInitiative: 0.99,
+}
+
+const nationalPlanning: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 0.98,
+  railwayPriority: 1.02,
+  mobileCommand: 1.12,
+  fortifiedState: 0.92,
+  researchInitiative: 1,
+}
+
+export function technologyEffectSummary(
+  technology: TechnologyId,
+  level: number,
+): string {
+  const next = level + 1
+  const summaries: Record<TechnologyId, string> = {
+    industrialMethods: `민수 수익 +${next * 8}% · 건설 시간 추가 단축`,
+    constructionEngineering: `비사단 건설 시간 -${next * 6.5}%`,
+    massProduction: `사단 편성 시간 -${next * 8}% · 회복 효율 증가`,
+    industrialAutomation: `민수 수익 +${next * 6}% · 사단 편성 시간 -${next * 3}%`,
+    regionalPlanning: `인프라 기반 건설 효율 +${next * 5}%`,
+    logisticsPlanning: `보급 회복 +${next * 0.3} · 고립 손실 완화`,
+    railOperations: `철도 보급 효과 +${next * 11}%p`,
+    supplyOptimization: `복합 보급 효율 +${next * 0.24}`,
+    networkScheduling: `철도 이동 시간 약 -${next * 4}% · 철도 보급 추가 강화`,
+    depotManagement: `물류센터 보급 회복 +${next * 0.22}`,
+    commandNetwork: `군단 준비도 축적 +${next * 0.45}/틱`,
+    operationalPlanning: `준비도 공세 보정 +${next * 2.5}%`,
+    staffCoordination: `군단 지휘 보정 +${next * 2}%`,
+    armyGroupCommand: `군단 준비도 +${next * 0.3}/틱 · 지휘 보정 +${next * 1.5}%`,
+    rapidRedeployment: `아군 지역 이동 시간 약 -${next * 4}%`,
+    fieldEngineering: `참호화 축적 +${next * 10}%`,
+    defensiveWorks: `지역 방어 효율 +${next * 5}%`,
+    mobilityEngineering: `기동 사단 이동 시간 약 -${next * 4}%`,
+    terrainAdaptation: `불리한 지형 이동/공세 패널티 약 ${next * 6}% 완화`,
+    civilEngineering: `철도·인프라·방어 공사 시간 -${next * 5}%`,
+  }
+  return summaries[technology]
 }
 
 export const TECHNOLOGY_IDS = Object.keys(
