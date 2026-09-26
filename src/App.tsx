@@ -2113,6 +2113,115 @@ function App() {
                   </small>
                 </div>
 
+                {hqNationalStats && (
+                  <>
+                    <div className="foreign-national-strategy">
+                      <span>국가 전략</span>
+                      <strong>
+                        {
+                          nationalStrategyLabels[
+                            hqNationalStats.nationalStrategy
+                          ]
+                        }
+                      </strong>
+                      <small>
+                        {
+                          nationalStrategyDescriptions[
+                            hqNationalStats.nationalStrategy
+                          ]
+                        }
+                      </small>
+                    </div>
+
+                    <div className="foreign-national-grid">
+                      <div>
+                        <span>영토</span>
+                        <strong>{hqNationalStats.territories}</strong>
+                      </div>
+                      <div>
+                        <span>자금</span>
+                        <strong>
+                          {hqNationalStats.funds.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>연구점수</span>
+                        <strong>
+                          {hqNationalStats.researchPoints.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>평균 보급</span>
+                        <strong>{hqNationalStats.averageSupply}%</strong>
+                      </div>
+                      <div>
+                        <span>철도 단계 합계</span>
+                        <strong>{hqNationalStats.railway}</strong>
+                      </div>
+                      <div>
+                        <span>기술</span>
+                        <strong>
+                          {hqNationalStats.researchedNodes}/
+                          {TECHNOLOGY_IDS.length}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="industry-overview foreign-industry-overview">
+                      {INDUSTRY_TYPES.map((kind) => (
+                        <div key={kind}>
+                          <span>{industryLabels[kind]}</span>
+                          <strong>
+                            {hqNationalStats.industry[kind]}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="foreign-tech-summary">
+                      <div className="panel-section-title">
+                        <strong>기술 현황</strong>
+                        <span>
+                          총 레벨 {hqNationalStats.technologyLevels}
+                        </span>
+                      </div>
+                      <div className="foreign-tech-grid">
+                        {(
+                          [
+                            'industry',
+                            'logistics',
+                            'command',
+                            'engineering',
+                          ] as TechnologyCategory[]
+                        ).map((category) => (
+                          <section key={category}>
+                            <strong>
+                              {technologyCategories[category].label}
+                            </strong>
+                            {TECHNOLOGY_IDS.filter(
+                              (technology) =>
+                                technologyDefinitions[technology]
+                                  .category === category &&
+                                (game.technologies[hqFaction][
+                                  technology
+                                ] ?? 0) > 0,
+                            ).map((technology) => (
+                              <span key={technology}>
+                                {technologyLabels[technology]} Lv.
+                                {
+                                  game.technologies[hqFaction][
+                                    technology
+                                  ]
+                                }
+                              </span>
+                            ))}
+                          </section>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="foreign-corps-list">
                   {hqArmyList.length === 0 ? (
                     <p className="panel-empty">
@@ -2124,7 +2233,10 @@ function App() {
                         <header>
                           <div>
                             <strong>{army.name}</strong>
-                            <span>{army.commander || '지휘관 미지정'}</span>
+                            <span>
+                              {army.commander || '지휘관 미지정'} ·{' '}
+                              {army.theater || '예비 전구'}
+                            </span>
                           </div>
                           <b>{strategyLabels[army.strategy]}</b>
                         </header>
@@ -2666,6 +2778,17 @@ function App() {
             </span>
           </div>
         )}
+
+        {game && railwayRouteStart && (
+          <div className="railway-route-hint">
+            <strong>철도 노선 계획</strong>
+            <span>
+              시작점 {game.territories[railwayRouteStart]?.fullName ?? '미지정'} · 지도에서 아군 영토 종점을 클릭
+            </span>
+            <button onClick={() => setRailwayRouteStart(null)}>취소</button>
+          </div>
+        )}
+
 
         <nav className="operations-dock">
           <button
@@ -3209,6 +3332,33 @@ function App() {
                       </span>
                     </button>
                   ))}
+
+                  <button
+                    className={
+                      railwayRouteStart === selected.id
+                        ? 'route-planning-active'
+                        : ''
+                    }
+                    onClick={() => {
+                      if (railwayRouteStart) {
+                        setRailwayRouteStart(null)
+                      } else {
+                        setRailwayRouteStart(selected.id)
+                        setMapMode('railway')
+                      }
+                    }}
+                  >
+                    <strong>
+                      {railwayRouteStart === selected.id
+                        ? '철도 노선 지정 취소'
+                        : '철도 노선 계획'}
+                    </strong>
+                    <span>
+                      {railwayRouteStart === selected.id
+                        ? '지도에서 종점을 클릭하면 아군 영토를 따라 경로 전체가 건설 대기열에 등록됩니다.'
+                        : '이 지역을 시작점으로 지정한 뒤 지도에서 종점을 선택합니다.'}
+                    </span>
+                  </button>
 
                   <button
                     disabled={
