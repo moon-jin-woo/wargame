@@ -32,6 +32,9 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=critical
 
+      - name: Test game simulation
+        run: npm test
+
       - name: Build
         run: npm run build
 
