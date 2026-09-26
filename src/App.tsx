@@ -129,6 +129,9 @@ function App() {
       type: 'geojson',
       data: adminData.collection as never,
       promoteId: 'gameId',
+      maxzoom: 12,
+      buffer: 64,
+      tolerance: 0.75,
     })
 
     map.addLayer({
