@@ -1608,6 +1608,165 @@ function App() {
               <button onClick={() => setArmyOpen(false)}>닫기</button>
             </div>
 
+            <div className="army-hq-section">
+              <div className="army-hq-title">
+                <div>
+                  <span>군 본부</span>
+                  <strong>{playerArmyList.length}개 군</strong>
+                </div>
+                <button
+                  onClick={() =>
+                    setGame((previous) =>
+                      previous ? createArmy(previous) : previous,
+                    )
+                  }
+                >
+                  + 군 창설
+                </button>
+              </div>
+
+              <div className="army-tabs">
+                {playerArmyList.length === 0 ? (
+                  <p className="panel-empty">
+                    군을 창설하면 여러 사단을 묶어 하나의 작전 목표를 줄 수 있습니다.
+                  </p>
+                ) : (
+                  playerArmyList.map((army) => (
+                    <button
+                      key={army.id}
+                      className={
+                        game.selectedArmyId === army.id ? 'selected' : ''
+                      }
+                      onClick={() => selectArmy(army.id)}
+                    >
+                      <strong>{army.name || '이름 없는 군'}</strong>
+                      <span>{army.divisionIds.length}개 사단</span>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {selectedArmy?.owner === 'player' && (
+                <div className="army-inspector">
+                  <div className="army-edit-grid">
+                    <label>
+                      <span>군 명칭</span>
+                      <input
+                        value={selectedArmy.name}
+                        maxLength={28}
+                        onChange={(event) =>
+                          setGame((previous) =>
+                            previous
+                              ? renameArmy(
+                                  previous,
+                                  selectedArmy.id,
+                                  event.target.value,
+                                )
+                              : previous,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>군 지휘관</span>
+                      <input
+                        value={selectedArmy.commander}
+                        maxLength={24}
+                        onChange={(event) =>
+                          setGame((previous) =>
+                            previous
+                              ? renameArmyCommander(
+                                  previous,
+                                  selectedArmy.id,
+                                  event.target.value,
+                                )
+                              : previous,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="army-plan-card">
+                    <div className="army-plan-meta">
+                      <div>
+                        <span>작전 상태</span>
+                        <strong>
+                          {selectedArmy.planStatus === 'executing'
+                            ? '실행 중'
+                            : selectedArmy.planStatus === 'planning'
+                              ? '계획 수립'
+                              : '대기'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>목표</span>
+                        <strong>
+                          {selectedArmy.objectiveId
+                            ? game.territories[selectedArmy.objectiveId]?.name ??
+                              '목표 없음'
+                            : '미지정'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>준비도</span>
+                        <strong>{Math.round(selectedArmy.preparation)}%</strong>
+                      </div>
+                    </div>
+
+                    <div className="army-preparation-track">
+                      <i
+                        style={{
+                          width: `${selectedArmy.preparation}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="army-plan-actions">
+                      <button
+                        className={objectiveMode ? 'active' : ''}
+                        onClick={() => setObjectiveMode((value) => !value)}
+                      >
+                        {objectiveMode ? '지도에서 목표 선택 중' : '지도에서 목표 지정'}
+                      </button>
+                      <button
+                        disabled={
+                          !selectedArmy.objectiveId ||
+                          selectedArmy.divisionIds.length === 0 ||
+                          selectedArmy.planStatus === 'executing'
+                        }
+                        onClick={() =>
+                          setGame((previous) =>
+                            previous
+                              ? executeArmyPlan(previous, selectedArmy.id)
+                              : previous,
+                          )
+                        }
+                      >
+                        작전 실행
+                      </button>
+                      <button
+                        disabled={selectedArmy.planStatus !== 'executing'}
+                        onClick={() =>
+                          setGame((previous) =>
+                            previous
+                              ? haltArmyPlan(previous, selectedArmy.id)
+                              : previous,
+                          )
+                        }
+                      >
+                        작전 중지
+                      </button>
+                    </div>
+
+                    <small>
+                      목표를 지정한 뒤 시간이 흐르면 준비도가 올라갑니다. 실행하면 이 군에 배속된 대기 사단들이 목표를 향해 이동합니다.
+                    </small>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {selectedDivision?.owner === 'player' && (
               <div className="division-inspector">
                 <div className="division-inspector-title">
