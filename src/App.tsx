@@ -235,26 +235,16 @@ function App() {
     previousTerritories.current = {}
     previousFrontlines.current = {}
     previousSelected.current = null
-    setLayerReady(false)
 
-    const sourceDataHandler = (event: maplibregl.MapSourceDataEvent) => {
-      if (event.sourceId !== SOURCE_ID || !event.isSourceLoaded) return
-      setLayerReady(true)
-      map.off('sourcedata', sourceDataHandler)
-    }
-
-    map.on('sourcedata', sourceDataHandler)
-
-    if (map.isSourceLoaded(SOURCE_ID)) {
-      setLayerReady(true)
-      map.off('sourcedata', sourceDataHandler)
-    }
+    // The source exists at this point. Do not block the whole UI waiting for
+    // MapLibre's sourcedata/isSourceLoaded event; that event can be missed
+    // during fast worker parsing and previously caused an infinite loader.
+    setLayerReady(true)
 
     return () => {
       map.off('click', FILL_LAYER_ID, clickHandler)
       map.off('mouseenter', FILL_LAYER_ID, enterHandler)
       map.off('mouseleave', FILL_LAYER_ID, leaveHandler)
-      map.off('sourcedata', sourceDataHandler)
     }
   }, [adminData, mapLoaded])
 
@@ -608,16 +598,10 @@ function App() {
           </div>
         )}
 
-        {(!game || !layerReady) && !loadingError && (
+        {!game && !loadingError && (
           <div className="loading-card">
-            <strong>
-              {!game ? '게임 데이터 불러오는 중' : '전국 행정동 영토 불러오는 중'}
-            </strong>
-            <span>
-              {!game
-                ? '행정동 게임 상태를 준비하고 있습니다.'
-                : '지도 엔진이 3,558개 행정동 폴리곤을 worker에서 불러오고 있습니다.'}
-            </span>
+            <strong>행정동 게임 데이터 불러오는 중</strong>
+            <span>전국 행정동 3,558개 영토 데이터를 준비하고 있습니다.</span>
           </div>
         )}
 
