@@ -251,6 +251,266 @@ export function playerDivisions(state: GameState): DivisionUnit[] {
     )
 }
 
+export function playerArmies(state: GameState): ArmyGroup[] {
+  return Object.values(state.armies)
+    .filter((army) => army.owner === 'player')
+    .sort(
+      (a, b) =>
+        a.createdTick - b.createdTick ||
+        a.name.localeCompare(b.name, 'ko'),
+    )
+}
+
+function nextArmyOrdinal(state: GameState): number {
+  return playerArmies(state).length + 1
+}
+
+export function createArmy(state: GameState): GameState {
+  if (state.phase !== 'running') return state
+
+  const ordinal = nextArmyOrdinal(state)
+  const id = `player-army-${state.tick}-${ordinal}`
+  const army: ArmyGroup = {
+    id,
+    owner: 'player',
+    name: `제${ordinal}군`,
+    commander: commanderName(`army:${id}`),
+    divisionIds: [],
+    objectiveId: null,
+    planStatus: 'idle',
+    preparation: 0,
+    createdTick: state.tick,
+  }
+
+  return withEvent(
+    {
+      ...state,
+      selectedArmyId: id,
+      armies: {
+        ...state.armies,
+        [id]: army,
+      },
+    },
+    'military',
+    `${army.name} 창설 · 지휘관 ${army.commander}`,
+  )
+}
+
+export function renameArmy(
+  state: GameState,
+  armyId: string,
+  name: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: { ...army, name: name.slice(0, 28) },
+    },
+  }
+}
+
+export function renameArmyCommander(
+  state: GameState,
+  armyId: string,
+  commander: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: { ...army, commander: commander.slice(0, 24) },
+    },
+  }
+}
+
+export function assignDivisionToArmy(
+  state: GameState,
+  divisionId: string,
+  armyId: string | null,
+): GameState {
+  const division = state.divisionUnits[divisionId]
+  if (!division || division.owner !== 'player') return state
+  if (armyId !== null && state.armies[armyId]?.owner !== 'player') return state
+
+  const armies = Object.fromEntries(
+    Object.entries(state.armies).map(([id, army]) => [
+      id,
+      {
+        ...army,
+        divisionIds: army.divisionIds.filter(
+          (candidateId) => candidateId !== divisionId,
+        ),
+      },
+    ]),
+  ) as Record<string, ArmyGroup>
+
+  if (armyId) {
+    armies[armyId] = {
+      ...armies[armyId],
+      divisionIds: [...armies[armyId].divisionIds, divisionId],
+    }
+  }
+
+  return {
+    ...state,
+    armies,
+    divisionUnits: {
+      ...state.divisionUnits,
+      [divisionId]: {
+        ...division,
+        armyId,
+      },
+    },
+  }
+}
+
+export function setDivisionRole(
+  state: GameState,
+  divisionId: string,
+  role: DivisionRole,
+): GameState {
+  const division = state.divisionUnits[divisionId]
+  if (
+    !division ||
+    division.owner !== 'player' ||
+    division.status !== 'idle'
+  ) {
+    return state
+  }
+
+  return {
+    ...state,
+    divisionUnits: {
+      ...state.divisionUnits,
+      [divisionId]: {
+        ...division,
+        role,
+        entrenchment: 0,
+      },
+    },
+  }
+}
+
+export function setArmyObjective(
+  state: GameState,
+  armyId: string,
+  territoryId: string | null,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+  if (territoryId !== null && !state.territories[territoryId]) return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: {
+        ...army,
+        objectiveId: territoryId,
+        planStatus: territoryId ? 'planning' : 'idle',
+        preparation: territoryId ? 0 : army.preparation,
+      },
+    },
+  }
+}
+
+export function executeArmyPlan(
+  state: GameState,
+  armyId: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (
+    !army ||
+    army.owner !== 'player' ||
+    !army.objectiveId ||
+    !state.territories[army.objectiveId]
+  ) {
+    return state
+  }
+
+  let next = state
+  let issued = 0
+
+  for (const divisionId of army.divisionIds) {
+    const division = next.divisionUnits[divisionId]
+    if (
+      !division ||
+      division.owner !== 'player' ||
+      division.status !== 'idle'
+    ) {
+      continue
+    }
+
+    const ordered = issueDivisionOrder(
+      next,
+      division.id,
+      army.objectiveId,
+    )
+    if (ordered !== next) {
+      next = ordered
+      issued += 1
+    }
+  }
+
+  if (issued === 0) return state
+
+  const currentArmy = next.armies[armyId] ?? army
+  return withEvent(
+    {
+      ...next,
+      armies: {
+        ...next.armies,
+        [armyId]: {
+          ...currentArmy,
+          planStatus: 'executing',
+        },
+      },
+    },
+    'military',
+    `${army.name} · 작전 실행 · ${issued}개 사단 명령`,
+  )
+}
+
+export function haltArmyPlan(
+  state: GameState,
+  armyId: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  let next = state
+  for (const divisionId of army.divisionIds) {
+    const division = next.divisionUnits[divisionId]
+    if (!division || division.owner !== 'player') continue
+    if (division.status !== 'idle') {
+      next = cancelDivisionOrder(next, division.id)
+    }
+  }
+
+  const currentArmy = next.armies[armyId] ?? army
+  return withEvent(
+    {
+      ...next,
+      armies: {
+        ...next.armies,
+        [armyId]: {
+          ...currentArmy,
+          planStatus: currentArmy.objectiveId ? 'planning' : 'idle',
+        },
+      },
+    },
+    'military',
+    `${army.name} · 작전 중지`,
+  )
+}
+
 function nextDivisionOrdinal(state: GameState, owner: PlayableFactionId): number {
   return (
     Object.values(state.divisionUnits).filter(
