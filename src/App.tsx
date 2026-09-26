@@ -142,6 +142,27 @@ function formatStrategicTime(tick: number): string {
   return `DAY ${String(day).padStart(3, '0')} · ${String(hour).padStart(2, '0')}:00`
 }
 
+function industryDescription(kind: IndustryType): string {
+  if (kind === 'civilian') return '자금 수익 증가'
+  if (kind === 'military') return '사단 편성·회복 가속'
+  if (kind === 'logistics') return '지역 보급 회복 증가'
+  if (kind === 'infrastructure') return '건설·이동 시간 감소'
+  return '연구점수 생산'
+}
+
+function technologyDescription(technology: TechnologyId): string {
+  if (technology === 'industrialMethods') {
+    return '산업 수익과 건설 속도 향상'
+  }
+  if (technology === 'logisticsPlanning') {
+    return '보급 회복과 고립 완화'
+  }
+  if (technology === 'commandNetwork') {
+    return '군 작전 준비도 축적 가속'
+  }
+  return '방어·참호화 효율 향상'
+}
+
 function divisionStatusLabel(division: DivisionUnit): string {
   if (division.status === 'moving') return '이동 중'
   if (division.status === 'attacking') return '공격 중'
@@ -2559,8 +2580,8 @@ function App() {
 
             <div className="metric-grid economy-metrics">
               <div>
-                <span>공장</span>
-                <strong>{selected.factories}</strong>
+                <span>근사 지형</span>
+                <strong>{terrainLabels[selected.terrain]}</strong>
               </div>
               <div>
                 <span>사단</span>
@@ -2574,6 +2595,17 @@ function App() {
                 <span>보급</span>
                 <strong>{Math.round(selected.supply)}%</strong>
               </div>
+            </div>
+
+            <div className="industry-mini-grid">
+              {INDUSTRY_TYPES.map((kind) => (
+                <div key={kind}>
+                  <span>{industryLabels[kind]}</span>
+                  <strong>
+                    {selected.industry[kind]} / {INDUSTRY_MAX[kind]}
+                  </strong>
+                </div>
+              ))}
             </div>
 
             <div className="military-power-row">
@@ -2642,24 +2674,31 @@ function App() {
                   </div>
                 </div>
 
-                <div className="build-grid">
-                  <button
-                    disabled={
-                      Boolean(selectedOrder) ||
-                      selected.factories >= MAX_FACTORIES ||
-                      game.funds.player < FACTORY_COST
-                    }
-                    onClick={() =>
-                      setGame((previous) =>
-                        previous ? buildFactory(previous, selected.id) : previous,
-                      )
-                    }
-                  >
-                    <strong>산업 시설 대기열</strong>
-                    <span>
-                      비용 {FACTORY_COST} · {productionDuration('factory', selected)}틱 · 수익 +{FACTORY_INCOME}/{ECONOMY_INTERVAL}틱
-                    </span>
-                  </button>
+                <div className="build-grid expanded-industry-grid">
+                  {INDUSTRY_TYPES.map((kind) => (
+                    <button
+                      key={kind}
+                      disabled={
+                        Boolean(selectedOrder) ||
+                        selected.industry[kind] >= INDUSTRY_MAX[kind] ||
+                        game.funds.player < INDUSTRY_COSTS[kind]
+                      }
+                      onClick={() =>
+                        setGame((previous) =>
+                          previous
+                            ? buildIndustry(previous, selected.id, kind)
+                            : previous,
+                        )
+                      }
+                    >
+                      <strong>{industryLabels[kind]}</strong>
+                      <span>
+                        비용 {INDUSTRY_COSTS[kind]} ·{' '}
+                        {productionDuration(kind, selected)}틱 ·{' '}
+                        {industryDescription(kind)}
+                      </span>
+                    </button>
+                  ))}
 
                   <button
                     disabled={Boolean(selectedOrder) || game.funds.player < DIVISION_COST}
@@ -2669,9 +2708,9 @@ function App() {
                       )
                     }
                   >
-                    <strong>사단 편성 대기열</strong>
+                    <strong>사단 편성</strong>
                     <span>
-                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 새 사단이 해당 지역에 실제 배치
+                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 해당 지역에 신규 사단 배치
                     </span>
                   </button>
 
@@ -2687,11 +2726,11 @@ function App() {
                       )
                     }
                   >
-                    <strong>방어 강화</strong>
+                    <strong>방어 공사</strong>
                     <span>
                       {selected.defense >= MAX_DEFENSE
                         ? '최대 단계'
-                        : `비용 ${defenseUpgradeCost(selected.defense)} · ${productionDuration('defense', selected)}틱 · 방어 +1`}
+                        : `비용 ${defenseUpgradeCost(selected.defense)} · ${productionDuration('defense', selected)}틱 · 지역 방어 +1`}
                     </span>
                   </button>
                 </div>
