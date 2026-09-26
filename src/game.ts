@@ -223,7 +223,7 @@ function syncTerritoryDivisionCounts(state: GameState): GameState {
   return changed ? { ...state, territories } : state
 }
 
-function materializeDivisions(
+export function materializeLegacyDivisions(
   territories: Record<string, TerritoryState>,
   tick: number,
 ): Record<string, DivisionUnit> {
@@ -436,7 +436,7 @@ export function startGame(state: GameState, startId: string): GameState {
     territories = claimCluster(territories, seed, faction, reserved)
   }
 
-  const divisions = materializeDivisions(territories, 0)
+  const divisions = materializeLegacyDivisions(territories, 0)
 
   return withEvent(
     syncTerritoryDivisionCounts({
