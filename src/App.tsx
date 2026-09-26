@@ -47,7 +47,6 @@ import type {
   AiCount,
   AiFactionId,
   Difficulty,
-  ArmyGroup,
   AttackStance,
   DivisionRole,
   DivisionUnit,
@@ -724,7 +723,9 @@ function App() {
       divisionStacks
         .map(
           (stack) =>
-            `${stack.key}:${stack.ids.join(',')}:${stack.moving}:${stack.fighting}`,
+            `${stack.key}:${stack.ids
+              .map((id) => `${id}:${game?.divisionUnits[id]?.role ?? 'line'}`)
+              .join(',')}:${stack.moving}:${stack.fighting}`,
         )
         .join('|'),
     [divisionStacks],
@@ -864,19 +865,13 @@ function App() {
     }
 
     map.on('click', DIVISION_COUNTER_LAYER_ID, clickHandler)
-    map.on('click', DIVISION_LABEL_LAYER_ID, clickHandler)
     map.on('mouseenter', DIVISION_COUNTER_LAYER_ID, enterHandler)
-    map.on('mouseenter', DIVISION_LABEL_LAYER_ID, enterHandler)
     map.on('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
-    map.on('mouseleave', DIVISION_LABEL_LAYER_ID, leaveHandler)
 
     return () => {
       map.off('click', DIVISION_COUNTER_LAYER_ID, clickHandler)
-      map.off('click', DIVISION_LABEL_LAYER_ID, clickHandler)
       map.off('mouseenter', DIVISION_COUNTER_LAYER_ID, enterHandler)
-      map.off('mouseenter', DIVISION_LABEL_LAYER_ID, enterHandler)
       map.off('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
-      map.off('mouseleave', DIVISION_LABEL_LAYER_ID, leaveHandler)
     }
   }, [layerReady])
 
@@ -1360,8 +1355,8 @@ function App() {
                 <strong>{playerQueue.length}</strong>
               </div>
               <div>
-                <span>전투</span>
-                <strong>{playerBattles.length}</strong>
+                <span>군</span>
+                <strong>{playerArmyList.length}</strong>
               </div>
             </div>
           )}
@@ -2015,10 +2010,10 @@ function App() {
                 </span>
               </div>
               <div>
-                <strong>5. 작전 강도를 고릅니다</strong>
+                <strong>5. 사단 역할과 군 작전을 사용합니다</strong>
                 <span>
-                  신중·균형·공세는 한 번의 전투에 투입하는 사단 비율과 부담을 바꿉니다.
-                  자동 공세는 원할 때만 켜는 선택 기능입니다.
+                  전열·기동·경비 역할로 사단 성격을 나누고, 여러 사단을 군에 배속할 수 있습니다.
+                  군에 목표를 지정하면 준비도가 쌓이며 작전 실행 시 배속 사단들이 함께 이동합니다.
                 </span>
               </div>
             </div>
