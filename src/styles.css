@@ -3018,3 +3018,251 @@ body {
     justify-self: start;
   }
 }
+
+
+/* Command / rail / deep tech overhaul */
+.hq-player-hidden {
+  display: none !important;
+}
+
+.hq-faction-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 0 0 10px;
+  overflow-x: auto;
+}
+
+.hq-faction-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: max-content;
+  padding: 7px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.18);
+  border-radius: 3px;
+  background: rgba(12, 14, 14, 0.58);
+  color: #a9aaa2;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.hq-faction-tabs button.active {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.1);
+  color: #e5ddc7;
+}
+
+.hq-faction-tabs i {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+}
+
+.hq-faction-tabs b {
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  font-size: 7px;
+}
+
+.foreign-hq-overview {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.foreign-hq-summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(186,169,126,0.18);
+  background: rgba(10,12,12,0.62);
+}
+
+.foreign-hq-summary span,
+.foreign-hq-summary small {
+  color: #858880;
+  font-size: 8px;
+}
+
+.foreign-hq-summary strong {
+  color: #e3dece;
+  font-size: 11px;
+}
+
+.foreign-corps-list {
+  display: grid;
+  gap: 7px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.foreign-corps-card {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(186,169,126,0.16);
+  border-radius: 3px;
+  background: rgba(13,15,14,0.58);
+}
+
+.foreign-corps-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.foreign-corps-card header div {
+  min-width: 0;
+}
+
+.foreign-corps-card header strong,
+.foreign-corps-card header span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foreign-corps-card header strong {
+  color: #e2ddcf;
+  font-size: 10px;
+}
+
+.foreign-corps-card header span,
+.foreign-corps-card small {
+  color: #858880;
+  font-size: 8px;
+}
+
+.foreign-corps-card header b {
+  color: var(--ops-brass);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.foreign-corps-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.foreign-corps-meta span {
+  padding: 3px 5px;
+  border: 1px solid rgba(186,169,126,0.13);
+  background: rgba(255,255,255,0.025);
+  color: #a5a69e;
+  font-size: 7px;
+}
+
+.foreign-corps-objective {
+  display: grid;
+  gap: 2px;
+}
+
+.foreign-corps-objective span {
+  color: #747871;
+  font-size: 7px;
+}
+
+.foreign-corps-objective strong {
+  overflow: hidden;
+  color: #c9c6ba;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.army-strategy-field {
+  display: grid;
+  gap: 4px;
+}
+
+.army-strategy-field > span {
+  color: #858880;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.army-strategy-field select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(186,169,126,0.2);
+  border-radius: 3px;
+  background: #101312;
+  color: #ddd8cb;
+  font-size: 9px;
+}
+
+.army-strategy-field small {
+  color: #777b74;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.deep-tech-panel {
+  width: min(760px, calc(100% - 28px));
+}
+
+.technology-tree {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  max-height: min(70vh, 680px);
+  overflow-y: auto;
+}
+
+.technology-branch {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(186,169,126,0.16);
+  border-radius: 4px;
+  background: rgba(10,12,12,0.5);
+}
+
+.technology-branch > header {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(186,169,126,0.14);
+}
+
+.technology-branch > header strong {
+  color: #dfdacb;
+  font-size: 10px;
+}
+
+.technology-branch > header span {
+  color: #777b74;
+  font-size: 8px;
+}
+
+.technology-row.locked {
+  opacity: 0.62;
+}
+
+.technology-prereq {
+  grid-column: 1 / -1;
+  color: #8c7b65;
+  font-size: 7px;
+  line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+  .deep-tech-panel {
+    width: auto;
+  }
+
+  .technology-tree {
+    grid-template-columns: 1fr;
+  }
+
+  .foreign-hq-summary {
+    grid-template-columns: 1fr;
+  }
+}
