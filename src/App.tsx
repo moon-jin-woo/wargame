@@ -694,17 +694,13 @@ function App() {
   const nationalStats = useMemo(() => {
     if (!game || !counts || total === 0) return null
 
-    let playerDivisions = 0
     let playerFactories = 0
-    let playerMilitaryPower = 0
     let playerSupply = 0
     let playerFrontlines = 0
 
     for (const territory of Object.values(game.territories)) {
       if (territory.owner !== 'player') continue
-      playerDivisions += territory.divisions
       playerFactories += territory.factories
-      playerMilitaryPower += territoryMilitaryPower(territory)
       playerSupply += territory.supply
 
       if (
@@ -716,19 +712,26 @@ function App() {
       }
     }
 
+    const playerUnits = Object.values(game.divisions).filter(
+      (division) => division.owner === 'player',
+    )
     const playerOwned = counts.player
+
     return {
       playerOwned,
       share: (playerOwned / total) * 100,
-      playerDivisions,
+      playerDivisions: playerUnits.length,
       playerFactories,
-      playerMilitaryPower,
+      playerMilitaryPower: playerUnits.reduce(
+        (sum, division) => sum + divisionMilitaryPower(division),
+        0,
+      ),
       income: factionIncomePerCycle(game, 'player'),
       averageSupply:
         playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
       playerFrontlines,
     }
-  }, [game?.territories, counts, total])
+  }, [game?.territories, game?.divisions, counts, total])
 
   const playerQueue = useMemo(
     () => game?.productionQueue.filter((order) => order.owner === 'player') ?? [],
@@ -753,15 +756,58 @@ function App() {
     [game?.battles, game?.territories],
   )
 
+  const playerDivisions = useMemo(
+    () =>
+      game
+        ? Object.values(game.divisions)
+            .filter((division) => division.owner === 'player')
+            .sort(
+              (a, b) =>
+                a.name.localeCompare(b.name, 'ko') ||
+                a.id.localeCompare(b.id),
+            )
+        : [],
+    [game?.divisions],
+  )
+
+  const selectedDivisions = useMemo(
+    () =>
+      selectedDivisionIds
+        .map((id) => game?.divisions[id])
+        .filter((division): division is NonNullable<typeof division> =>
+          Boolean(division),
+        ),
+    [selectedDivisionIds, game?.divisions],
+  )
+
+  const primaryDivision = selectedDivisions[0] ?? null
+
+  const selectedTerritoryDivisions = useMemo(
+    () =>
+      selected && game
+        ? Object.values(game.divisions)
+            .filter((division) => division.territoryId === selected.id)
+            .sort(
+              (a, b) =>
+                a.owner.localeCompare(b.owner) ||
+                a.name.localeCompare(b.name, 'ko'),
+            )
+        : [],
+    [selected?.id, game?.divisions],
+  )
+
   const selectedBattle = useMemo(
     () =>
       selected && game
-        ? game.battles.find(
-            (battle) =>
-              battle.fromId === selected.id || battle.toId === selected.id,
-          ) ?? null
+        ? game.battles.find((battle) => {
+            if (battle.toId === selected.id) return true
+            return battle.attackerDivisionIds.some(
+              (divisionId) =>
+                game.divisions[divisionId]?.territoryId === selected.id,
+            )
+          }) ?? null
         : null,
-    [game?.battles, selected?.id],
+    [game?.battles, game?.divisions, selected?.id],
   )
 
   const frontlineGroups = useMemo(() => {
@@ -790,7 +836,11 @@ function App() {
       }
 
       current.territories += 1
-      current.divisions += territory.divisions
+      current.divisions += Object.values(game.divisions).filter(
+        (division) =>
+          division.owner === 'player' &&
+          division.territoryId === territory.id,
+      ).length
       current.pressure += hostileNeighbors
       groups.set(key, current)
     }
@@ -801,7 +851,7 @@ function App() {
         b.territories - a.territories ||
         a.name.localeCompare(b.name, 'ko'),
     )
-  }, [game?.territories])
+  }, [game?.territories, game?.divisions])
 
   const regionalStats = useMemo(() => {
     if (!game || !selected) return null
