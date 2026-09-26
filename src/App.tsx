@@ -568,6 +568,79 @@ function App() {
     }
   }, [game?.territories, counts, total])
 
+  const playerQueue = useMemo(
+    () => game?.productionQueue.filter((order) => order.owner === 'player') ?? [],
+    [game?.productionQueue],
+  )
+
+  const selectedOrder = useMemo(
+    () =>
+      selected
+        ? playerQueue.find((order) => order.territoryId === selected.id) ?? null
+        : null,
+    [playerQueue, selected?.id],
+  )
+
+  const playerBattles = useMemo(
+    () =>
+      game?.battles.filter(
+        (battle) =>
+          battle.attacker === 'player' ||
+          game.territories[battle.toId]?.owner === 'player',
+      ) ?? [],
+    [game?.battles, game?.territories],
+  )
+
+  const selectedBattle = useMemo(
+    () =>
+      selected && game
+        ? game.battles.find(
+            (battle) =>
+              battle.fromId === selected.id || battle.toId === selected.id,
+          ) ?? null
+        : null,
+    [game?.battles, selected?.id],
+  )
+
+  const frontlineGroups = useMemo(() => {
+    if (!game) return []
+
+    const groups = new Map<
+      string,
+      { name: string; territories: number; divisions: number; pressure: number }
+    >()
+
+    for (const territory of Object.values(game.territories)) {
+      if (territory.owner !== 'player') continue
+
+      const hostileNeighbors = territory.neighbors.filter(
+        (id) => game.territories[id]?.owner !== 'player',
+      ).length
+
+      if (hostileNeighbors === 0) continue
+
+      const key = territory.sidoName || '기타'
+      const current = groups.get(key) ?? {
+        name: key,
+        territories: 0,
+        divisions: 0,
+        pressure: 0,
+      }
+
+      current.territories += 1
+      current.divisions += territory.divisions
+      current.pressure += hostileNeighbors
+      groups.set(key, current)
+    }
+
+    return [...groups.values()].sort(
+      (a, b) =>
+        b.pressure - a.pressure ||
+        b.territories - a.territories ||
+        a.name.localeCompare(b.name, 'ko'),
+    )
+  }, [game?.territories])
+
   const regionalStats = useMemo(() => {
     if (!game || !selected) return null
 
