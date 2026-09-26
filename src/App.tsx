@@ -102,6 +102,7 @@ function ownerColor(owner: FactionId, game: GameState): string {
 function App() {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const gameRef = useRef<GameState | null>(null)
   const territoryCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const previousOwners = useRef<Record<string, string>>({})
   const previousSelected = useRef<string | null>(null)
@@ -130,6 +131,10 @@ function App() {
   useEffect(() => {
     selectedDivisionIdsRef.current = selectedDivisionIds
   }, [selectedDivisionIds])
+
+  useEffect(() => {
+    gameRef.current = game
+  }, [game])
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -524,20 +529,39 @@ function App() {
 
     const current = new Set<string>()
     for (const battle of game.battles) {
-      current.add(battle.fromId)
       current.add(battle.toId)
+      for (const divisionId of battle.attackerDivisionIds) {
+        const division = game.divisions[divisionId]
+        if (division) current.add(division.territoryId)
+      }
+    }
+
+    for (const id of current) {
       map.setFeatureState(
-        { source: SOURCE_ID, id: battle.fromId },
-        { battle: true },
-      )
-      map.setFeatureState(
-        { source: SOURCE_ID, id: battle.toId },
+        { source: SOURCE_ID, id },
         { battle: true },
       )
     }
 
     previousBattleTerritories.current = current
-  }, [game?.battles, layerReady])
+  }, [game?.battles, game?.divisions, layerReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady || !game) return
+
+    const source = map.getSource(DIVISION_SOURCE_ID)
+    if (!source || source.type !== 'geojson') return
+
+    source.setData(
+      buildDivisionFeatureCollection(game, selectedDivisionIds) as never,
+    )
+  }, [
+    game?.divisions,
+    game?.factionColors,
+    selectedDivisionIds,
+    layerReady,
+  ])
 
   useEffect(() => {
     if (!game || territoryRenderCount) {
