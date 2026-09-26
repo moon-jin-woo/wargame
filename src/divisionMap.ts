@@ -3,6 +3,8 @@ import type { DivisionUnit, GameState } from './types'
 export const DIVISION_SOURCE_ID = 'division-units'
 export const DIVISION_SHADOW_LAYER_ID = 'division-unit-shadow'
 export const DIVISION_LAYER_ID = 'division-unit-circle'
+export const DIVISION_ORDER_SOURCE_ID = 'division-orders'
+export const DIVISION_ORDER_LAYER_ID = 'division-order-line'
 
 type DivisionFeatureCollection = {
   type: 'FeatureCollection'
@@ -23,6 +25,22 @@ type DivisionFeatureCollection = {
     geometry: {
       type: 'Point'
       coordinates: [number, number]
+    }
+  }>
+}
+
+type OrderFeatureCollection = {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    id: string
+    properties: {
+      divisionId: string
+      status: string
+    }
+    geometry: {
+      type: 'LineString'
+      coordinates: [number, number][]
     }
   }>
 }
@@ -48,6 +66,35 @@ function divisionColor(division: DivisionUnit, game: GameState): string {
   return base
 }
 
+function interpolatedPosition(
+  division: DivisionUnit,
+  game: GameState,
+): [number, number] | null {
+  const current = game.territories[division.territoryId]
+  if (!current) return null
+
+  if (division.status !== 'moving' || !division.order) {
+    return [...current.centroid]
+  }
+
+  const nextId = division.order.path[division.order.nextIndex]
+  const next = game.territories[nextId]
+  if (!next) return [...current.centroid]
+
+  const progress = Math.max(
+    0,
+    Math.min(
+      1,
+      1 - division.order.remainingTicks / division.order.totalTicks,
+    ),
+  )
+
+  return [
+    current.centroid[0] + (next.centroid[0] - current.centroid[0]) * progress,
+    current.centroid[1] + (next.centroid[1] - current.centroid[1]) * progress,
+  ]
+}
+
 export function buildDivisionFeatureCollection(
   game: GameState,
   selectedIds: readonly string[],
@@ -70,7 +117,14 @@ export function buildDivisionFeatureCollection(
     divisions.sort((a, b) => a.id.localeCompare(b.id))
 
     divisions.forEach((division, index) => {
-      const [dx, dy] = statusOffset(index, divisions.length)
+      const position = interpolatedPosition(division, game)
+      if (!position) return
+
+      const [dx, dy] =
+        division.status === 'moving'
+          ? [0, 0]
+          : statusOffset(index, divisions.length)
+
       features.push({
         type: 'Feature',
         id: division.id,
@@ -87,12 +141,55 @@ export function buildDivisionFeatureCollection(
         },
         geometry: {
           type: 'Point',
-          coordinates: [
-            territory.centroid[0] + dx,
-            territory.centroid[1] + dy,
-          ],
+          coordinates: [position[0] + dx, position[1] + dy],
         },
       })
+    })
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  }
+}
+
+export function buildDivisionOrderFeatureCollection(
+  game: GameState,
+  selectedIds: readonly string[],
+): OrderFeatureCollection {
+  const features: OrderFeatureCollection['features'] = []
+
+  for (const divisionId of selectedIds) {
+    const division = game.divisions[divisionId]
+    if (!division?.order || division.status !== 'moving') continue
+
+    const currentPosition = interpolatedPosition(division, game)
+    if (!currentPosition) continue
+
+    const coordinates: [number, number][] = [currentPosition]
+
+    for (
+      let index = division.order.nextIndex;
+      index < division.order.path.length;
+      index += 1
+    ) {
+      const territory = game.territories[division.order.path[index]]
+      if (territory) coordinates.push([...territory.centroid])
+    }
+
+    if (coordinates.length < 2) continue
+
+    features.push({
+      type: 'Feature',
+      id: division.id,
+      properties: {
+        divisionId: division.id,
+        status: division.status,
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates,
+      },
     })
   }
 
