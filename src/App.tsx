@@ -140,6 +140,19 @@ function App() {
   }, [game])
 
   useEffect(() => {
+    if (!game) return
+    setSelectedDivisionIds((previous) => {
+      const next = previous.filter(
+        (id) => game.divisions[id]?.owner === 'player',
+      )
+      return next.length === previous.length &&
+        next.every((id, index) => id === previous[index])
+        ? previous
+        : next
+    })
+  }, [game?.divisions])
+
+  useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
     const map = new maplibregl.Map({
@@ -1015,6 +1028,7 @@ function App() {
     if (!game) return
     const restored = restoreGame(game)
     if (!restored) return
+    setSelectedDivisionIds([])
     setGame(restored)
     setSavedAt(getSavedAt())
   }
@@ -1032,6 +1046,11 @@ function App() {
       }
 
       if (!game) return
+
+      if (event.key === 'Escape') {
+        setSelectedDivisionIds([])
+        return
+      }
 
       if (event.code === 'Space' && game.phase === 'running') {
         event.preventDefault()
@@ -1338,7 +1357,7 @@ function App() {
                 )}
               </div>
               <small>
-                신중은 적은 사단, 균형은 절반, 공세는 더 많은 사단을 한 전투에 투입합니다.
+                신중·균형·공세는 선택한 사단의 전투 효율과 전투 위험도를 바꾸는 추상 작전 강도입니다.
               </small>
             </div>
 
@@ -1438,44 +1457,51 @@ function App() {
 
             <div className="rules-steps">
               <div>
-                <strong>1. 생산은 즉시 끝나지 않습니다</strong>
+                <strong>1. 사단을 실제 유닛으로 운용합니다</strong>
                 <span>
-                  산업 시설·사단·방어 공사를 주문하면 자금이 먼저 사용되고 생산 대기열에 들어갑니다.
-                  시간이 흐르면 완성됩니다.
+                  하단의 사단 메뉴나 지도 위 원형 사단 토큰을 눌러 선택합니다.
+                  Shift/Ctrl을 누른 채 선택하면 여러 사단을 동시에 묶을 수 있습니다.
                 </span>
               </div>
               <div>
-                <strong>2. 전투도 즉시 끝나지 않습니다</strong>
+                <strong>2. 선택한 사단에 목적지를 지정합니다</strong>
                 <span>
-                  내 행정동을 선택한 다음 인접한 다른 세력 영토를 클릭하면 전투가 시작됩니다.
-                  전선 패널에서 진행 게이지를 확인할 수 있습니다.
+                  사단 선택 후 지도에서 행정동을 클릭하면 이동 명령이 내려갑니다.
+                  아군 영토는 경로를 따라 이동하고, 적 영토에 도착하면 그 사단이 전투를 시작합니다.
                 </span>
               </div>
               <div>
-                <strong>3. 경제가 군사력을 만듭니다</strong>
+                <strong>3. 사단이 들어가야 점령됩니다</strong>
+                <span>
+                  영토 자체를 클릭해서 점령할 수 없습니다. 전투에서 이긴 사단이 목표 행정동에
+                  실제로 진입한 뒤에만 소유권이 바뀝니다.
+                </span>
+              </div>
+              <div>
+                <strong>4. 사단마다 상태가 다릅니다</strong>
+                <span>
+                  각 사단은 명칭, 지휘관, 병력 상태, 조직력, 보급, 경험, 현재 위치와 이동 명령을
+                  따로 가집니다. 조직력과 보급이 낮은 사단은 전투력이 떨어집니다.
+                </span>
+              </div>
+              <div>
+                <strong>5. 산업과 생산이 새 사단을 만듭니다</strong>
                 <span>
                   산업 시설은 {ECONOMY_INTERVAL}틱마다 자금 {FACTORY_INCOME}을 생산합니다.
-                  그 자금으로 새 생산 주문을 넣습니다.
+                  사단 편성이 완료되면 생산 지역에 새로운 개별 사단이 배치됩니다.
                 </span>
               </div>
               <div>
-                <strong>4. 연결과 보급을 유지합니다</strong>
+                <strong>6. 전선과 작전 강도를 조절합니다</strong>
                 <span>
-                  같은 세력 영토와 연결된 지역은 보급이 회복되고, 고립된 지역은 보급이 떨어집니다.
-                  인접 아군 지역으로 1개 사단을 재배치할 수도 있습니다.
-                </span>
-              </div>
-              <div>
-                <strong>5. 작전 강도를 고릅니다</strong>
-                <span>
-                  신중·균형·공세는 한 번의 전투에 투입하는 사단 비율과 부담을 바꿉니다.
-                  자동 공세는 원할 때만 켜는 선택 기능입니다.
+                  전선 패널에서 진행 중 전투를 확인하고 신중·균형·공세 작전 강도를 선택할 수 있습니다.
+                  자동 공세는 선택 기능이며, 직접 사단을 운용할 때는 꺼두어도 됩니다.
                 </span>
               </div>
             </div>
 
             <p className="rules-tip">
-              Space = 정지/재개 · 1/2/4 = 배속 · 0 = ×10 · F = 선택 지역 확대
+              Shift/Ctrl = 다중 사단 선택 · Esc = 사단 선택 해제 · Space = 정지/재개 · 1/2/4 = 배속 · 0 = ×10 · F = 선택 지역 확대
             </p>
           </section>
         )}
