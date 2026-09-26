@@ -107,6 +107,15 @@ const INDUSTRY_TYPES: IndustryType[] = [
   'research',
 ]
 
+const NATIONAL_STRATEGIES: NationalStrategy[] = [
+  'balancedDevelopment',
+  'industrialPush',
+  'railwayPriority',
+  'mobileCommand',
+  'fortifiedState',
+  'researchInitiative',
+]
+
 const TERRAIN_COLORS: Record<TerritoryState['terrain'], string> = {
   urban: '#7f7067',
   plains: '#71835f',
@@ -796,6 +805,61 @@ function App() {
         : [],
     [game?.divisionUnits, hqFaction],
   )
+
+  const hqNationalStats = useMemo(() => {
+    if (!game) return null
+
+    const owned = Object.values(game.territories).filter(
+      (territory) => territory.owner === hqFaction,
+    )
+    const industry = {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    }
+    let railway = 0
+    let supply = 0
+
+    for (const territory of owned) {
+      for (const kind of INDUSTRY_TYPES) {
+        industry[kind] += territory.industry[kind]
+      }
+      railway += territory.railway
+      supply += territory.supply
+    }
+
+    const technologies = game.technologies[hqFaction]
+    const researchedNodes = TECHNOLOGY_IDS.filter(
+      (technology) => (technologies[technology] ?? 0) > 0,
+    ).length
+    const technologyLevels = TECHNOLOGY_IDS.reduce(
+      (sum, technology) => sum + (technologies[technology] ?? 0),
+      0,
+    )
+
+    return {
+      territories: owned.length,
+      industry,
+      railway,
+      averageSupply:
+        owned.length > 0 ? Math.round(supply / owned.length) : 0,
+      researchedNodes,
+      technologyLevels,
+      funds: game.funds[hqFaction],
+      researchPoints: game.researchPoints[hqFaction],
+      nationalStrategy:
+        game.nationalStrategies[hqFaction] ?? 'balancedDevelopment',
+    }
+  }, [
+    game?.territories,
+    game?.technologies,
+    game?.funds,
+    game?.researchPoints,
+    game?.nationalStrategies,
+    hqFaction,
+  ])
 
   const playerDivisionList = useMemo(
     () => (game ? playerDivisions(game) : []),
