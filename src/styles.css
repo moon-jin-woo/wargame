@@ -1333,3 +1333,140 @@ button {
     font-size: 17px;
   }
 }
+
+
+.economy-hud {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.economy-hud > div {
+  min-width: 0;
+  padding: 9px 8px;
+  border: 1px solid #293540;
+  border-radius: 8px;
+  background: #10161c;
+}
+
+.economy-hud span,
+.economy-hud strong {
+  display: block;
+}
+
+.economy-hud span {
+  color: #7f8f9f;
+  font-size: 8px;
+}
+
+.economy-hud strong {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #eef3f7;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.economy-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.military-power-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid #2b3743;
+  border-radius: 8px;
+  background: #10161c;
+}
+
+.military-power-row span {
+  color: #8797a8;
+  font-size: 9px;
+}
+
+.military-power-row strong {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.build-panel {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #334050;
+  border-radius: 9px;
+  background: #111820;
+}
+
+.build-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.build-panel-head span {
+  color: #8a9aaa;
+  font-size: 9px;
+}
+
+.build-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.build-grid button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #344252;
+  border-radius: 7px;
+  background: #151d25;
+  color: #e8eef4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.build-grid button:hover:not(:disabled) {
+  border-color: #6b7f94;
+  background: #1a242e;
+}
+
+.build-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.build-grid button strong {
+  font-size: 10px;
+}
+
+.build-grid button span {
+  color: #8797a8;
+  font-size: 9px;
+}
+
+.event-row.economy {
+  border-left: 2px solid #c69b52;
+}
+
+.event-row.military {
+  border-left: 2px solid #9b77c6;
+}
+
+@media (max-width: 560px) {
+  .economy-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .economy-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

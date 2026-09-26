@@ -3,13 +3,25 @@ import * as maplibregl from 'maplibre-gl'
 import { loadLatestAdminDongs } from './adminData'
 import {
   advanceTick,
+  buildDivision,
+  buildFactory,
   captureTerritory,
   createInitialState,
+  defenseUpgradeCost,
   difficultyLabels,
+  DIVISION_COST,
+  ECONOMY_INTERVAL,
+  FACTORY_COST,
+  FACTORY_INCOME,
+  factionIncomePerCycle,
   factions,
+  MAX_DEFENSE,
+  MAX_FACTORIES,
   ownerCounts,
   startGame,
+  territoryMilitaryPower,
   transferTroops,
+  upgradeDefense,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
 import { drawTerritoryCanvas, findTerritoryAtLngLat } from './territoryCanvas'
@@ -458,14 +470,19 @@ function App() {
   const nationalStats = useMemo(() => {
     if (!game || !counts || total === 0) return null
 
-    let playerTroops = 0
+    let playerDivisions = 0
+    let playerFactories = 0
+    let playerMilitaryPower = 0
     let playerSupply = 0
     let playerFrontlines = 0
 
     for (const territory of Object.values(game.territories)) {
       if (territory.owner !== 'player') continue
-      playerTroops += territory.troops
+      playerDivisions += territory.divisions
+      playerFactories += territory.factories
+      playerMilitaryPower += territoryMilitaryPower(territory)
       playerSupply += territory.supply
+
       if (
         territory.neighbors.some(
           (neighborId) => game.territories[neighborId]?.owner !== 'player',
@@ -479,7 +496,10 @@ function App() {
     return {
       playerOwned,
       share: (playerOwned / total) * 100,
-      playerTroops: Math.round(playerTroops),
+      playerDivisions,
+      playerFactories,
+      playerMilitaryPower,
+      income: factionIncomePerCycle(game, 'player'),
       averageSupply:
         playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
       playerFrontlines,
@@ -732,24 +752,39 @@ function App() {
 
             <div className="rules-steps">
               <div>
-                <strong>1. 시작</strong>
-                <span>지휘 패널을 열고 시작할 행정동을 고른 뒤 게임을 시작합니다.</span>
+                <strong>1. 경제</strong>
+                <span>
+                  공장 1개는 {ECONOMY_INTERVAL}틱마다 자금 {FACTORY_INCOME}을 생산합니다.
+                  자금으로 공장({FACTORY_COST}), 사단({DIVISION_COST}), 방어시설을 건설합니다.
+                </span>
               </div>
               <div>
-                <strong>2. 점령</strong>
-                <span>내 영토를 한 번 선택하고, 그 영토와 맞닿은 중립/적 영토를 지도에서 다시 클릭하면 점령을 시도합니다.</span>
+                <strong>2. 사단</strong>
+                <span>
+                  사단이 실제 공격력의 핵심입니다. 내 영토를 선택한 뒤 인접한 중립/적 영토를 클릭하면
+                  보유 사단의 절반(올림)이 공격에 투입됩니다.
+                </span>
               </div>
               <div>
-                <strong>3. 병력·보급</strong>
-                <span>병력이 많고 보급이 높을수록 점령에 유리합니다. 연결된 영토는 회복하고, 고립된 영토는 보급이 떨어집니다.</span>
+                <strong>3. 방어</strong>
+                <span>
+                  방어 단계는 수비 전투력만 올립니다. 단계가 높아질수록 다음 강화 비용도 올라가며,
+                  점령당하면 방어시설 일부가 손상됩니다.
+                </span>
               </div>
               <div>
-                <strong>4. 지원</strong>
-                <span>지휘 패널에서 인접한 아군 영토로 병력 일부를 지원 이동시킬 수 있습니다.</span>
+                <strong>4. 보급과 지원</strong>
+                <span>
+                  연결된 영토는 보급이 회복되고, 고립된 영토는 보급이 감소합니다.
+                  인접 아군 영토끼리는 1개 사단씩 지원 이동할 수 있습니다.
+                </span>
               </div>
               <div>
                 <strong>5. 승리</strong>
-                <span>전국 행정동을 모두 점령하면 승리합니다. 내 영토가 0개가 되면 패배합니다.</span>
+                <span>
+                  공장으로 경제를 키우고 사단과 방어를 배치해 전국 행정동을 모두 점령하면 승리합니다.
+                  내 영토가 0개가 되면 패배합니다.
+                </span>
               </div>
             </div>
 
@@ -828,6 +863,27 @@ function App() {
           </div>
         )}
 
+        {game && game.phase !== 'setup' && nationalStats && (
+          <section className="economy-hud">
+            <div>
+              <span>보유 자금</span>
+              <strong>{game.funds.player.toLocaleString()}</strong>
+            </div>
+            <div>
+              <span>공장 수익</span>
+              <strong>+{nationalStats.income.toLocaleString()} / {ECONOMY_INTERVAL}틱</strong>
+            </div>
+            <div>
+              <span>공장</span>
+              <strong>{nationalStats.playerFactories.toLocaleString()}</strong>
+            </div>
+            <div>
+              <span>사단</span>
+              <strong>{nationalStats.playerDivisions.toLocaleString()}</strong>
+            </div>
+          </section>
+        )}
+
         {game && counts && (
           <div className="faction-grid">
             {(Object.keys(factions) as FactionId[]).map((id) => (
@@ -852,8 +908,8 @@ function App() {
                 <strong>{nationalStats.share.toFixed(1)}%</strong>
               </div>
               <div>
-                <span>병력 지수 합계</span>
-                <strong>{nationalStats.playerTroops.toLocaleString()}</strong>
+                <span>총 군사력</span>
+                <strong>{nationalStats.playerMilitaryPower.toLocaleString()}</strong>
               </div>
               <div>
                 <span>평균 보급</span>
@@ -1106,20 +1162,90 @@ function App() {
               <span className="isolation-chip">고립 · 보급 감소</span>
             )}
 
-            <div className="metric-grid">
+            <div className="metric-grid economy-metrics">
               <div>
-                <span>병력 지수</span>
-                <strong>{Math.round(selected.troops)}</strong>
+                <span>공장</span>
+                <strong>{selected.factories}</strong>
               </div>
               <div>
-                <span>보급 지수</span>
+                <span>사단</span>
+                <strong>{selected.divisions}</strong>
+              </div>
+              <div>
+                <span>방어</span>
+                <strong>{selected.defense} / {MAX_DEFENSE}</strong>
+              </div>
+              <div>
+                <span>보급</span>
                 <strong>{Math.round(selected.supply)}%</strong>
               </div>
-              <div>
-                <span>인접 지역</span>
-                <strong>{selected.neighbors.length}</strong>
-              </div>
             </div>
+
+            <div className="military-power-row">
+              <span>지역 군사력</span>
+              <strong>{territoryMilitaryPower(selected).toLocaleString()}</strong>
+            </div>
+
+            {game.phase === 'running' && selected.owner === 'player' && (
+              <div className="build-panel">
+                <div className="build-panel-head">
+                  <div>
+                    <p className="section-label">경제 / 군사 건설</p>
+                    <span>현재 자금 {game.funds.player.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="build-grid">
+                  <button
+                    disabled={
+                      selected.factories >= MAX_FACTORIES ||
+                      game.funds.player < FACTORY_COST
+                    }
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous ? buildFactory(previous, selected.id) : previous,
+                      )
+                    }
+                  >
+                    <strong>공장 건설</strong>
+                    <span>
+                      비용 {FACTORY_COST} · 수익 +{FACTORY_INCOME}/{ECONOMY_INTERVAL}틱
+                    </span>
+                  </button>
+
+                  <button
+                    disabled={game.funds.player < DIVISION_COST}
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous ? buildDivision(previous, selected.id) : previous,
+                      )
+                    }
+                  >
+                    <strong>사단 편성</strong>
+                    <span>비용 {DIVISION_COST} · 지역 사단 +1</span>
+                  </button>
+
+                  <button
+                    disabled={
+                      selected.defense >= MAX_DEFENSE ||
+                      game.funds.player < defenseUpgradeCost(selected.defense)
+                    }
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous ? upgradeDefense(previous, selected.id) : previous,
+                      )
+                    }
+                  >
+                    <strong>방어 강화</strong>
+                    <span>
+                      {selected.defense >= MAX_DEFENSE
+                        ? '최대 단계'
+                        : `비용 ${defenseUpgradeCost(selected.defense)} · 방어 +1`}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {regionalStats && (
               <div className="regional-stats">
@@ -1164,7 +1290,7 @@ function App() {
                   game.phase === 'running' &&
                   selected.owner === 'player' &&
                   neighbor.owner === 'player' &&
-                  selected.troops > 20
+                  selected.divisions > 1
 
                 return (
                   <div key={neighbor.id} className="neighbor-item">
@@ -1188,15 +1314,15 @@ function App() {
                     >
                       <span>{neighbor.name}</span>
                       <small>
-                        {ownerName(neighbor.owner, game)} · {Math.round(neighbor.troops)}
-                        {canCapture ? ' · 점령 시도' : ''}
+                        {ownerName(neighbor.owner, game)} · 사단 {neighbor.divisions} · 방어 {neighbor.defense}
+                        {canCapture ? ' · 공격 가능' : ''}
                       </small>
                     </button>
 
                     {canSupport && (
                       <button
                         className="support-button"
-                        title="현재 지역의 이동 가능한 병력 중 30% 지원"
+                        title="현재 지역에서 1개 사단을 인접 아군 영토로 이동"
                         onClick={() =>
                           setGame((previous) =>
                             previous
@@ -1205,7 +1331,7 @@ function App() {
                           )
                         }
                       >
-                        지원 30%
+                        1사단 지원
                       </button>
                     )}
                   </div>
