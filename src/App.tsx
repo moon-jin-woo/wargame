@@ -32,7 +32,10 @@ import {
 import { getSavedAt, restoreGame, saveGame } from './persistence'
 import {
   buildDivisionFeatureCollection,
+  buildDivisionOrderFeatureCollection,
   DIVISION_LAYER_ID,
+  DIVISION_ORDER_LAYER_ID,
+  DIVISION_ORDER_SOURCE_ID,
   DIVISION_SHADOW_LAYER_ID,
   DIVISION_SOURCE_ID,
 } from './divisionMap'
@@ -296,6 +299,28 @@ function App() {
       )
     }
 
+    if (!map.getSource(DIVISION_ORDER_SOURCE_ID)) {
+      map.addSource(DIVISION_ORDER_SOURCE_ID, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      })
+
+      map.addLayer({
+        id: DIVISION_ORDER_LAYER_ID,
+        type: 'line',
+        source: DIVISION_ORDER_SOURCE_ID,
+        paint: {
+          'line-color': '#c7aa68',
+          'line-width': 2,
+          'line-opacity': 0.9,
+          'line-dasharray': [2, 1.5],
+        },
+      })
+    }
+
     if (!map.getSource(DIVISION_SOURCE_ID)) {
       map.addSource(DIVISION_SOURCE_ID, {
         type: 'geojson',
@@ -550,12 +575,23 @@ function App() {
     const map = mapRef.current
     if (!map || !layerReady || !game) return
 
-    const source = map.getSource(DIVISION_SOURCE_ID)
-    if (!source || source.type !== 'geojson') return
+    const divisionSource = map.getSource(DIVISION_SOURCE_ID)
+    const orderSource = map.getSource(DIVISION_ORDER_SOURCE_ID)
 
-    source.setData(
-      buildDivisionFeatureCollection(game, selectedDivisionIds) as never,
-    )
+    if (divisionSource?.type === 'geojson') {
+      divisionSource.setData(
+        buildDivisionFeatureCollection(game, selectedDivisionIds) as never,
+      )
+    }
+
+    if (orderSource?.type === 'geojson') {
+      orderSource.setData(
+        buildDivisionOrderFeatureCollection(
+          game,
+          selectedDivisionIds,
+        ) as never,
+      )
+    }
   }, [
     game?.divisions,
     game?.factionColors,
