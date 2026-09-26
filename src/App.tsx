@@ -196,6 +196,8 @@ function App() {
           'case',
           ['boolean', ['feature-state', 'selected'], false],
           '#ffffff',
+          ['boolean', ['feature-state', 'battle'], false],
+          '#ff6f4e',
           ['boolean', ['feature-state', 'frontline'], false],
           '#ffb65c',
           '#d6dee7',
@@ -204,6 +206,8 @@ function App() {
           'case',
           ['boolean', ['feature-state', 'selected'], false],
           3.6,
+          ['boolean', ['feature-state', 'battle'], false],
+          3,
           ['boolean', ['feature-state', 'frontline'], false],
           2.2,
           [
@@ -368,6 +372,34 @@ function App() {
 
     previousSelected.current = game.selectedId
   }, [game?.selectedId, layerReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady || !game) return
+
+    for (const id of previousBattleTerritories.current) {
+      map.setFeatureState(
+        { source: SOURCE_ID, id },
+        { battle: false },
+      )
+    }
+
+    const current = new Set<string>()
+    for (const battle of game.battles) {
+      current.add(battle.fromId)
+      current.add(battle.toId)
+      map.setFeatureState(
+        { source: SOURCE_ID, id: battle.fromId },
+        { battle: true },
+      )
+      map.setFeatureState(
+        { source: SOURCE_ID, id: battle.toId },
+        { battle: true },
+      )
+    }
+
+    previousBattleTerritories.current = current
+  }, [game?.battles, layerReady])
 
   useEffect(() => {
     if (!game || territoryRenderCount) {
