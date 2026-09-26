@@ -7,6 +7,7 @@ export type AiCount = 1 | 2 | 3
 export type GameSpeed = 1 | 2 | 4 | 10
 export type AttackStance = 'cautious' | 'balanced' | 'aggressive'
 export type ProductionKind = 'factory' | 'division' | 'defense'
+export type DivisionStatus = 'idle' | 'moving' | 'battle' | 'recovering'
 export type GameEventKind =
   | 'system'
   | 'capture'
@@ -16,6 +17,7 @@ export type GameEventKind =
   | 'military'
   | 'production'
   | 'battle'
+  | 'movement'
 
 export interface Faction {
   id: FactionId
@@ -41,13 +43,37 @@ export interface ProductionOrder {
   queuedTick: number
 }
 
+export interface DivisionMoveOrder {
+  kind: 'move'
+  targetId: string
+  path: string[]
+  nextIndex: number
+  remainingTicks: number
+  totalTicks: number
+}
+
+export interface DivisionUnit {
+  id: string
+  owner: PlayableFactionId
+  name: string
+  commander: string
+  territoryId: string
+  strength: number
+  organization: number
+  supply: number
+  experience: number
+  status: DivisionStatus
+  order: DivisionMoveOrder | null
+  createdTick: number
+}
+
 export interface BattleState {
   id: string
   attacker: PlayableFactionId
   defender: FactionId
-  fromId: string
   toId: string
-  committedDivisions: number
+  attackerDivisionIds: string[]
+  defenderDivisionIds: string[]
   progress: number
   stance: AttackStance
   startedTick: number
@@ -87,6 +113,7 @@ export interface GameState {
   events: GameEvent[]
   productionQueue: ProductionOrder[]
   battles: BattleState[]
+  divisions: Record<string, DivisionUnit>
   territories: Record<string, TerritoryState>
 }
 
