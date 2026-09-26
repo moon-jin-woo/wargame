@@ -4,7 +4,13 @@ export type PlayableFactionId = 'player' | AiFactionId
 export type GamePhase = 'setup' | 'running' | 'victory' | 'defeat'
 export type Difficulty = 'easy' | 'normal' | 'hard'
 export type AiCount = 1 | 2 | 3
-export type GameEventKind = 'system' | 'capture' | 'defense' | 'support'
+export type GameEventKind =
+  | 'system'
+  | 'capture'
+  | 'defense'
+  | 'support'
+  | 'economy'
+  | 'military'
 
 export interface Faction {
   id: FactionId
@@ -28,6 +34,9 @@ export interface TerritoryState {
   owner: FactionId
   troops: number
   supply: number
+  factories: number
+  divisions: number
+  defense: number
   neighbors: string[]
   centroid: [number, number]
 }
@@ -41,6 +50,7 @@ export interface GameState {
   playerName: string
   aiNames: Record<AiFactionId, string>
   factionColors: Record<PlayableFactionId, string>
+  funds: Record<PlayableFactionId, number>
   aiCount: AiCount
   difficulty: Difficulty
   dataVersion: string
