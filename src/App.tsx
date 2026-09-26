@@ -867,19 +867,19 @@ function App() {
           <section className="economy-hud">
             <div>
               <span>보유 자금</span>
-              <strong>${game.funds.player.toLocaleString()}</strong>
+              <strong>{game.funds.player.toLocaleString()}</strong>
             </div>
             <div>
               <span>공장 수익</span>
-              <strong>+${nationalStats.income.toLocaleString()} / ${ECONOMY_INTERVAL}틱</strong>
+              <strong>+{nationalStats.income.toLocaleString()} / {ECONOMY_INTERVAL}틱</strong>
             </div>
             <div>
               <span>공장</span>
-              <strong>${nationalStats.playerFactories.toLocaleString()}</strong>
+              <strong>{nationalStats.playerFactories.toLocaleString()}</strong>
             </div>
             <div>
               <span>사단</span>
-              <strong>${nationalStats.playerDivisions.toLocaleString()}</strong>
+              <strong>{nationalStats.playerDivisions.toLocaleString()}</strong>
             </div>
           </section>
         )}
