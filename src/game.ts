@@ -1769,6 +1769,7 @@ function processMovement(state: GameState): GameState {
   let next = state
   let divisionUnits = { ...state.divisionUnits }
   let territories = state.territories
+  let positionChanged = false
   const captured: Array<{ territoryId: string; divisionId: string }> = []
   const battleStarts: Array<{
     divisionId: string
@@ -1873,6 +1874,7 @@ function processMovement(state: GameState): GameState {
       order: nextOrder,
       organization: Math.max(30, division.organization - 2.5),
     }
+    positionChanged = true
 
     if (nextStep.owner !== division.owner) {
       territories = {
@@ -1890,11 +1892,14 @@ function processMovement(state: GameState): GameState {
     }
   }
 
-  next = syncTerritoryDivisionCounts({
+  next = {
     ...next,
     divisionUnits,
     territories,
-  })
+  }
+  if (positionChanged) {
+    next = syncTerritoryDivisionCounts(next)
+  }
 
   for (const battle of battleStarts) {
     next = startDivisionBattle(
@@ -2771,23 +2776,44 @@ export function advanceTick(state: GameState): GameState {
   let territories = state.territories
 
   if (nextTick % 4 === 0) {
-    territories = { ...territories }
+    let updated: Record<string, TerritoryState> | null = null
 
     for (const [id, territory] of Object.entries(territories)) {
       if (territory.owner === 'neutral') continue
 
+      const owner = territory.owner as PlayableFactionId
       const connected = territory.neighbors.some(
         (neighborId) =>
           territories[neighborId]?.owner === territory.owner,
       )
+      const logisticsLevel = territory.industry.logistics
+      const infrastructureLevel = territory.industry.infrastructure
+      const technologyLevel =
+        state.technologies[owner]?.logisticsPlanning ?? 0
 
-      territories[id] = {
-        ...territory,
-        supply: connected
-          ? Math.min(100, territory.supply + 1.2)
-          : Math.max(0, territory.supply - 3),
-      }
+      const supplyDelta = connected
+        ? (0.65 +
+            logisticsLevel * 0.72 +
+            infrastructureLevel * 0.28 +
+            technologyLevel * 0.3) *
+          terrainSupply[territory.terrain]
+        : -Math.max(
+            0.75,
+            (3.2 -
+              logisticsLevel * 0.42 -
+              infrastructureLevel * 0.18 -
+              technologyLevel * 0.16) /
+              Math.max(0.65, terrainSupply[territory.terrain]),
+          )
+
+      const supply = clamp(territory.supply + supplyDelta, 0, 100)
+      if (Math.abs(supply - territory.supply) < 0.001) continue
+
+      if (!updated) updated = { ...territories }
+      updated[id] = { ...territory, supply }
     }
+
+    if (updated) territories = updated
   }
 
   let next: GameState = {
