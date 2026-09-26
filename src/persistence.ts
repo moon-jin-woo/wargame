@@ -136,6 +136,13 @@ function validDivisionUnits(
       territories[unit.order.targetId]
         ? {
             ...unit.order,
+            path: Array.isArray(unit.order.path)
+              ? unit.order.path.filter(
+                  (territoryId) =>
+                    typeof territoryId === 'string' &&
+                    Boolean(territories[territoryId]),
+                )
+              : [unit.order.targetId],
             totalTicks: Math.max(0, Math.floor(unit.order.totalTicks || 0)),
             remainingTicks: Math.max(
               0,
