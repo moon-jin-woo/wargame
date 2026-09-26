@@ -917,8 +917,36 @@ function App() {
     })
   }
 
+  const focusDivision = (divisionId: string, additive = false) => {
+    const division = gameRef.current?.divisions[divisionId]
+    const territory = division
+      ? gameRef.current?.territories[division.territoryId]
+      : null
+    if (!division || !territory) return
+
+    setSelectedDivisionIds((previous) => {
+      if (!additive) return [divisionId]
+      return previous.includes(divisionId)
+        ? previous.filter((id) => id !== divisionId)
+        : [...previous, divisionId]
+    })
+
+    setGame((previous) =>
+      previous
+        ? { ...previous, selectedId: division.territoryId }
+        : previous,
+    )
+
+    mapRef.current?.easeTo({
+      center: territory.centroid,
+      zoom: Math.max(mapRef.current?.getZoom() ?? 6, 9),
+      duration: 420,
+    })
+  }
+
   const handleNewGame = () => {
     if (!adminData) return
+    setSelectedDivisionIds([])
     const next = createInitialState(adminData.territories, adminData.version)
     setGame((previous) => ({
       ...next,
@@ -1111,6 +1139,76 @@ function App() {
               </button>
             ))}
           </div>
+        )}
+
+        {game?.phase === 'running' && divisionsOpen && (
+          <section className="floating-panel divisions-panel">
+            <div className="floating-panel-head">
+              <div>
+                <p className="eyebrow">육군 / 사단</p>
+                <h2>사단 목록</h2>
+              </div>
+              <button onClick={() => setDivisionsOpen(false)}>닫기</button>
+            </div>
+
+            <div className="division-panel-summary">
+              <span>보유 사단 {playerDivisions.length}</span>
+              <span>선택 {selectedDivisionIds.length}</span>
+            </div>
+
+            <div className="division-list">
+              {playerDivisions.length === 0 ? (
+                <p className="panel-empty">
+                  생산 메뉴에서 사단을 편성하면 이 목록과 지도에 개별 유닛으로 나타납니다.
+                </p>
+              ) : (
+                playerDivisions.map((division) => {
+                  const territory = game.territories[division.territoryId]
+                  const selectedUnit = selectedDivisionIds.includes(division.id)
+
+                  return (
+                    <button
+                      key={division.id}
+                      className={`division-list-row ${selectedUnit ? 'selected' : ''}`}
+                      onClick={(event) =>
+                        focusDivision(
+                          division.id,
+                          event.shiftKey || event.metaKey || event.ctrlKey,
+                        )
+                      }
+                    >
+                      <div className="division-list-main">
+                        <strong>{division.name || '이름 없는 사단'}</strong>
+                        <span>
+                          {division.commander || '지휘관 미지정'} · {territory?.name ?? '?'}
+                        </span>
+                      </div>
+                      <div className="division-status-text">
+                        <b>{division.status === 'idle'
+                          ? '대기'
+                          : division.status === 'moving'
+                            ? '이동'
+                            : division.status === 'battle'
+                              ? '전투'
+                              : '재정비'}</b>
+                        <span>전투력 {divisionMilitaryPower(division)}</span>
+                      </div>
+                      <div className="division-mini-bars">
+                        <i
+                          className="strength"
+                          style={{ width: `${division.strength}%` }}
+                        />
+                        <i
+                          className="organization"
+                          style={{ width: `${division.organization}%` }}
+                        />
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </section>
         )}
 
         {game?.phase === 'running' && productionOpen && (
@@ -1380,12 +1478,47 @@ function App() {
           </div>
         )}
 
+        {game?.phase === 'running' && selectedDivisions.length > 0 && (
+          <div className="division-command-bar">
+            <div>
+              <strong>
+                {selectedDivisions.length === 1
+                  ? primaryDivision?.name || '사단'
+                  : `${selectedDivisions.length}개 사단 선택`}
+              </strong>
+              <span>
+                지도에서 목적지를 클릭하면 이동합니다. 적 영토라면 도착 후 전투가 시작됩니다.
+              </span>
+            </div>
+            <button
+              onClick={() =>
+                setGame((previous) =>
+                  previous
+                    ? stopDivisionOrders(previous, selectedDivisionIds)
+                    : previous,
+                )
+              }
+            >
+              정지
+            </button>
+            <button onClick={() => setSelectedDivisionIds([])}>선택 해제</button>
+          </div>
+        )}
+
         <nav className="operations-dock">
           <button
             className={commandOpen ? 'active' : ''}
             onClick={() => setCommandOpen((open) => !open)}
           >
             지휘
+          </button>
+          <button
+            className={divisionsOpen ? 'active' : ''}
+            disabled={game?.phase !== 'running'}
+            onClick={() => setDivisionsOpen((open) => !open)}
+          >
+            사단
+            {playerDivisions.length > 0 && <b>{playerDivisions.length}</b>}
           </button>
           <button
             className={productionOpen ? 'active' : ''}
