@@ -9,6 +9,8 @@ export type AttackStance = 'cautious' | 'balanced' | 'aggressive'
 export type ProductionKind = 'factory' | 'division' | 'defense'
 export type DivisionOrderType = 'move' | 'attack'
 export type DivisionStatus = 'idle' | 'moving' | 'attacking' | 'defending'
+export type DivisionRole = 'line' | 'mobile' | 'guard'
+export type ArmyPlanStatus = 'idle' | 'planning' | 'executing'
 export type GameEventKind =
   | 'system'
   | 'capture'
@@ -58,12 +60,27 @@ export interface DivisionUnit {
   owner: PlayableFactionId
   name: string
   commander: string
+  role: DivisionRole
+  armyId: string | null
   locationId: string
   strength: number
   organization: number
   experience: number
+  entrenchment: number
   status: DivisionStatus
   order: DivisionOrder | null
+  createdTick: number
+}
+
+export interface ArmyGroup {
+  id: string
+  owner: PlayableFactionId
+  name: string
+  commander: string
+  divisionIds: string[]
+  objectiveId: string | null
+  planStatus: ArmyPlanStatus
+  preparation: number
   createdTick: number
 }
 
@@ -103,6 +120,7 @@ export interface GameState {
   tick: number
   selectedId: string | null
   selectedDivisionId: string | null
+  selectedArmyId: string | null
   playerName: string
   aiNames: Record<AiFactionId, string>
   factionColors: Record<PlayableFactionId, string>
@@ -116,6 +134,7 @@ export interface GameState {
   productionQueue: ProductionOrder[]
   battles: BattleState[]
   divisionUnits: Record<string, DivisionUnit>
+  armies: Record<string, ArmyGroup>
   territories: Record<string, TerritoryState>
 }
 

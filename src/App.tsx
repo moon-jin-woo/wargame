@@ -8,6 +8,7 @@ import {
   buildFactory,
   cancelDivisionOrder,
   cancelProduction,
+  createArmy,
   createInitialState,
   defenseUpgradeCost,
   difficultyLabels,
@@ -16,16 +17,25 @@ import {
   FACTORY_COST,
   FACTORY_INCOME,
   divisionsAt,
+  divisionRoleLabels,
+  executeArmyPlan,
   factionIncomePerCycle,
   factions,
+  haltArmyPlan,
   issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
   ownerCounts,
+  playerArmies,
   playerDivisions,
   productionDuration,
+  renameArmy,
+  renameArmyCommander,
   renameCommander,
   renameDivision,
+  setArmyObjective,
+  setDivisionRole,
+  assignDivisionToArmy,
   startGame,
   territoryMilitaryPower,
   upgradeDefense,
@@ -38,6 +48,7 @@ import type {
   AiFactionId,
   Difficulty,
   AttackStance,
+  DivisionRole,
   DivisionUnit,
   FactionId,
   GameSpeed,
@@ -51,6 +62,9 @@ const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
 const DIVISION_ROUTE_SOURCE_ID = 'division-route'
 const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
+const DIVISION_SOURCE_ID = 'division-stacks'
+const DIVISION_COUNTER_LAYER_ID = 'division-counter'
+const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
 type MapMode = 'control' | 'supply' | 'industry'
 
 function territoryMapColor(
@@ -112,7 +126,6 @@ function App() {
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
   const previousBattleTerritories = useRef<Set<string>>(new Set())
-  const divisionMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -129,6 +142,7 @@ function App() {
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
+  const [objectiveMode, setObjectiveMode] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
   useEffect(() => {
@@ -283,6 +297,81 @@ function App() {
         'line-width': 2.4,
         'line-opacity': 0.9,
         'line-dasharray': [2, 1.5],
+      },
+    })
+
+    map.addSource(DIVISION_SOURCE_ID, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_COUNTER_LAYER_ID,
+      type: 'circle',
+      source: DIVISION_SOURCE_ID,
+      paint: {
+        'circle-radius': [
+          'case',
+          ['boolean', ['get', 'selected'], false],
+          ['interpolate', ['linear'], ['zoom'], 5.4, 10, 9, 13, 13, 17],
+          ['interpolate', ['linear'], ['zoom'], 5.4, 8, 9, 11, 13, 15],
+        ],
+        'circle-color': ['get', 'color'],
+        'circle-opacity': 0.96,
+        'circle-stroke-color': [
+          'case',
+          ['boolean', ['get', 'fighting'], false],
+          '#f06f55',
+          ['boolean', ['get', 'selected'], false],
+          '#f1e2b3',
+          ['boolean', ['get', 'moving'], false],
+          '#cfb46d',
+          '#1a1c1c',
+        ],
+        'circle-stroke-width': [
+          'case',
+          ['boolean', ['get', 'selected'], false],
+          3,
+          2,
+        ],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_SOURCE_ID,
+      layout: {
+        'text-field': [
+          'format',
+          ['get', 'symbol'],
+          { 'font-scale': 0.82 },
+          '\n',
+          {},
+          ['to-string', ['get', 'count']],
+          { 'font-scale': 1.05 },
+        ],
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          5.4,
+          8,
+          9,
+          10,
+          13,
+          12,
+        ],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f6f2e6',
+        'text-halo-color': '#161818',
+        'text-halo-width': 1.1,
       },
     })
 
@@ -567,6 +656,15 @@ function App() {
     game?.selectedDivisionId
       ? game.divisionUnits[game.selectedDivisionId] ?? null
       : null
+  const selectedArmy =
+    game?.selectedArmyId
+      ? game.armies[game.selectedArmyId] ?? null
+      : null
+
+  const playerArmyList = useMemo(
+    () => (game ? playerArmies(game) : []),
+    [game?.armies],
+  )
 
   const playerDivisionList = useMemo(
     () => (game ? playerDivisions(game) : []),
@@ -625,108 +723,157 @@ function App() {
       divisionStacks
         .map(
           (stack) =>
-            `${stack.key}:${stack.ids.join(',')}:${stack.moving}:${stack.fighting}`,
+            `${stack.key}:${stack.ids
+              .map((id) => `${id}:${game?.divisionUnits[id]?.role ?? 'line'}`)
+              .join(',')}:${stack.moving}:${stack.fighting}`,
         )
         .join('|'),
     [divisionStacks],
   )
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapLoaded || !game) return
+    if (!map || !layerReady || !game) return
 
-    for (const marker of divisionMarkersRef.current.values()) {
-      marker.remove()
-    }
-    divisionMarkersRef.current.clear()
+    const source = map.getSource(
+      DIVISION_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
 
-    for (const stack of divisionStacks) {
-      const territory = game.territories[stack.territoryId]
-      if (!territory) continue
+    const features = divisionStacks
+      .map((stack) => {
+        const territory = game.territories[stack.territoryId]
+        if (!territory) return null
 
-      const element = document.createElement('button')
-      element.type = 'button'
-      element.className = 'division-map-counter'
-      element.style.setProperty('--division-color', ownerColor(stack.owner, game))
-      element.dataset.selected = stack.ids.includes(game.selectedDivisionId ?? '')
-        ? 'true'
-        : 'false'
-      element.dataset.fighting = stack.fighting > 0 ? 'true' : 'false'
-      element.dataset.moving = stack.moving > 0 ? 'true' : 'false'
-      element.innerHTML = `<span class="division-symbol">◆</span><strong>${stack.ids.length}</strong>`
-      element.title = `${ownerName(stack.owner, game)} · ${territory.name} · 사단 ${stack.ids.length}`
+        const roles = stack.ids
+          .map((id) => game.divisionUnits[id]?.role)
+          .filter((role): role is DivisionRole => Boolean(role))
+        const mobileCount = roles.filter((role) => role === 'mobile').length
+        const guardCount = roles.filter((role) => role === 'guard').length
+        const symbol =
+          mobileCount > roles.length / 2
+            ? '◇'
+            : guardCount > roles.length / 2
+              ? '■'
+              : '◆'
 
-      element.addEventListener('click', (event) => {
-        event.stopPropagation()
-        setGame((previous) => {
-          if (!previous) return previous
-
-          const selectedUnit = previous.selectedDivisionId
-            ? previous.divisionUnits[previous.selectedDivisionId]
-            : null
-
-          if (
-            stack.owner !== 'player' &&
-            selectedUnit?.owner === 'player' &&
-            selectedUnit.status === 'idle' &&
-            selectedUnit.locationId !== stack.territoryId
-          ) {
-            const ordered = issueDivisionOrder(
-              previous,
-              selectedUnit.id,
-              stack.territoryId,
-            )
-
-            if (ordered !== previous) {
-              return {
-                ...ordered,
-                selectedId: stack.territoryId,
-                selectedDivisionId: selectedUnit.id,
-              }
-            }
-          }
-
-          const playerUnit = stack.ids
-            .map((id) => previous.divisionUnits[id])
-            .find((division) => division?.owner === 'player')
-
-          return {
-            ...previous,
-            selectedId: stack.territoryId,
-            selectedDivisionId:
-              playerUnit?.id ??
-              (stack.owner === 'player'
-                ? previous.selectedDivisionId
-                : null),
-          }
-        })
-
-        if (stack.owner === 'player') {
-          setArmyOpen(true)
+        return {
+          type: 'Feature' as const,
+          id: stack.key,
+          properties: {
+            key: stack.key,
+            territoryId: stack.territoryId,
+            owner: stack.owner,
+            ids: stack.ids.join(','),
+            count: stack.ids.length,
+            symbol,
+            moving: stack.moving > 0,
+            fighting: stack.fighting > 0,
+            selected: stack.ids.includes(game.selectedDivisionId ?? ''),
+            color: ownerColor(stack.owner, game),
+          },
+          geometry: {
+            type: 'Point' as const,
+            coordinates: territory.centroid,
+          },
         }
       })
+      .filter((feature): feature is NonNullable<typeof feature> =>
+        Boolean(feature),
+      )
 
-      const marker = new maplibregl.Marker({
-        element,
-        anchor: 'center',
-      })
-        .setLngLat(territory.centroid)
-        .addTo(map)
-
-      divisionMarkersRef.current.set(stack.key, marker)
-    }
-
-    return () => {
-      for (const marker of divisionMarkersRef.current.values()) {
-        marker.remove()
-      }
-      divisionMarkersRef.current.clear()
-    }
+    source.setData({
+      type: 'FeatureCollection',
+      features,
+    })
   }, [
-    mapLoaded,
+    layerReady,
     divisionStackSignature,
     game?.selectedDivisionId,
     game?.factionColors,
   ])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady) return
+
+    const clickHandler = (
+      event: maplibregl.MapLayerMouseEvent,
+    ) => {
+      const properties = event.features?.[0]?.properties
+      if (!properties) return
+
+      const territoryId = String(properties.territoryId ?? '')
+      const owner = String(properties.owner ?? '')
+      const ids = String(properties.ids ?? '')
+        .split(',')
+        .filter(Boolean)
+      if (!territoryId || ids.length === 0) return
+
+      setGame((previous) => {
+        if (!previous) return previous
+
+        const selectedUnit = previous.selectedDivisionId
+          ? previous.divisionUnits[previous.selectedDivisionId]
+          : null
+
+        if (
+          owner !== 'player' &&
+          selectedUnit?.owner === 'player' &&
+          selectedUnit.status === 'idle' &&
+          selectedUnit.locationId !== territoryId
+        ) {
+          const ordered = issueDivisionOrder(
+            previous,
+            selectedUnit.id,
+            territoryId,
+          )
+
+          if (ordered !== previous) {
+            return {
+              ...ordered,
+              selectedId: territoryId,
+              selectedDivisionId: selectedUnit.id,
+            }
+          }
+        }
+
+        const playerUnit = ids
+          .map((id) => previous.divisionUnits[id])
+          .find((division) => division?.owner === 'player')
+
+        return {
+          ...previous,
+          selectedId: territoryId,
+          selectedDivisionId:
+            playerUnit?.id ??
+            (owner === 'player'
+              ? previous.selectedDivisionId
+              : null),
+        }
+      })
+
+      if (owner === 'player') {
+        setArmyOpen(true)
+      }
+    }
+
+    const enterHandler = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const leaveHandler = () => {
+      map.getCanvas().style.cursor = ''
+    }
+
+    map.on('click', DIVISION_COUNTER_LAYER_ID, clickHandler)
+    map.on('mouseenter', DIVISION_COUNTER_LAYER_ID, enterHandler)
+    map.on('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
+
+    return () => {
+      map.off('click', DIVISION_COUNTER_LAYER_ID, clickHandler)
+      map.off('mouseenter', DIVISION_COUNTER_LAYER_ID, enterHandler)
+      map.off('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
+    }
+  }, [layerReady])
 
   useEffect(() => {
     const map = mapRef.current
@@ -967,6 +1114,22 @@ function App() {
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
+      if (
+        objectiveMode &&
+        previous.selectedArmyId &&
+        previous.armies[previous.selectedArmyId]?.owner === 'player'
+      ) {
+        const next = setArmyObjective(
+          previous,
+          previous.selectedArmyId,
+          targetId,
+        )
+        return {
+          ...next,
+          selectedId: targetId,
+        }
+      }
+
       const divisionId = previous.selectedDivisionId
       const division = divisionId
         ? previous.divisionUnits[divisionId]
@@ -996,6 +1159,10 @@ function App() {
 
       return { ...previous, selectedId: targetId }
     })
+
+    if (objectiveMode) {
+      setObjectiveMode(false)
+    }
   }
 
   const selectDivision = (divisionId: string) => {
@@ -1023,6 +1190,27 @@ function App() {
         duration: 420,
       })
     }
+  }
+
+  const selectArmy = (armyId: string) => {
+    setGame((previous) => {
+      if (!previous) return previous
+      const army = previous.armies[armyId]
+      if (!army || army.owner !== 'player') return previous
+
+      const leadDivision = army.divisionIds
+        .map((id) => previous.divisionUnits[id])
+        .find(Boolean)
+
+      return {
+        ...previous,
+        selectedArmyId: army.id,
+        selectedDivisionId:
+          leadDivision?.id ?? previous.selectedDivisionId,
+        selectedId:
+          leadDivision?.locationId ?? previous.selectedId,
+      }
+    })
   }
 
   const focusSelected = () => {
@@ -1167,8 +1355,8 @@ function App() {
                 <strong>{playerQueue.length}</strong>
               </div>
               <div>
-                <span>전투</span>
-                <strong>{playerBattles.length}</strong>
+                <span>군</span>
+                <strong>{playerArmyList.length}</strong>
               </div>
             </div>
           )}
@@ -1415,6 +1603,165 @@ function App() {
               <button onClick={() => setArmyOpen(false)}>닫기</button>
             </div>
 
+            <div className="army-hq-section">
+              <div className="army-hq-title">
+                <div>
+                  <span>군 본부</span>
+                  <strong>{playerArmyList.length}개 군</strong>
+                </div>
+                <button
+                  onClick={() =>
+                    setGame((previous) =>
+                      previous ? createArmy(previous) : previous,
+                    )
+                  }
+                >
+                  + 군 창설
+                </button>
+              </div>
+
+              <div className="army-tabs">
+                {playerArmyList.length === 0 ? (
+                  <p className="panel-empty">
+                    군을 창설하면 여러 사단을 묶어 하나의 작전 목표를 줄 수 있습니다.
+                  </p>
+                ) : (
+                  playerArmyList.map((army) => (
+                    <button
+                      key={army.id}
+                      className={
+                        game.selectedArmyId === army.id ? 'selected' : ''
+                      }
+                      onClick={() => selectArmy(army.id)}
+                    >
+                      <strong>{army.name || '이름 없는 군'}</strong>
+                      <span>{army.divisionIds.length}개 사단</span>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {selectedArmy?.owner === 'player' && (
+                <div className="army-inspector">
+                  <div className="army-edit-grid">
+                    <label>
+                      <span>군 명칭</span>
+                      <input
+                        value={selectedArmy.name}
+                        maxLength={28}
+                        onChange={(event) =>
+                          setGame((previous) =>
+                            previous
+                              ? renameArmy(
+                                  previous,
+                                  selectedArmy.id,
+                                  event.target.value,
+                                )
+                              : previous,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>군 지휘관</span>
+                      <input
+                        value={selectedArmy.commander}
+                        maxLength={24}
+                        onChange={(event) =>
+                          setGame((previous) =>
+                            previous
+                              ? renameArmyCommander(
+                                  previous,
+                                  selectedArmy.id,
+                                  event.target.value,
+                                )
+                              : previous,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="army-plan-card">
+                    <div className="army-plan-meta">
+                      <div>
+                        <span>작전 상태</span>
+                        <strong>
+                          {selectedArmy.planStatus === 'executing'
+                            ? '실행 중'
+                            : selectedArmy.planStatus === 'planning'
+                              ? '계획 수립'
+                              : '대기'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>목표</span>
+                        <strong>
+                          {selectedArmy.objectiveId
+                            ? game.territories[selectedArmy.objectiveId]?.name ??
+                              '목표 없음'
+                            : '미지정'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>준비도</span>
+                        <strong>{Math.round(selectedArmy.preparation)}%</strong>
+                      </div>
+                    </div>
+
+                    <div className="army-preparation-track">
+                      <i
+                        style={{
+                          width: `${selectedArmy.preparation}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="army-plan-actions">
+                      <button
+                        className={objectiveMode ? 'active' : ''}
+                        onClick={() => setObjectiveMode((value) => !value)}
+                      >
+                        {objectiveMode ? '지도에서 목표 선택 중' : '지도에서 목표 지정'}
+                      </button>
+                      <button
+                        disabled={
+                          !selectedArmy.objectiveId ||
+                          selectedArmy.divisionIds.length === 0 ||
+                          selectedArmy.planStatus === 'executing'
+                        }
+                        onClick={() =>
+                          setGame((previous) =>
+                            previous
+                              ? executeArmyPlan(previous, selectedArmy.id)
+                              : previous,
+                          )
+                        }
+                      >
+                        작전 실행
+                      </button>
+                      <button
+                        disabled={selectedArmy.planStatus !== 'executing'}
+                        onClick={() =>
+                          setGame((previous) =>
+                            previous
+                              ? haltArmyPlan(previous, selectedArmy.id)
+                              : previous,
+                          )
+                        }
+                      >
+                        작전 중지
+                      </button>
+                    </div>
+
+                    <small>
+                      목표를 지정한 뒤 시간이 흐르면 준비도가 올라갑니다. 실행하면 이 군에 배속된 대기 사단들이 목표를 향해 이동합니다.
+                    </small>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {selectedDivision?.owner === 'player' && (
               <div className="division-inspector">
                 <div className="division-inspector-title">
@@ -1466,6 +1813,60 @@ function App() {
                   />
                 </label>
 
+                <div className="division-command-grid">
+                  <label>
+                    <span>사단 역할</span>
+                    <select
+                      value={selectedDivision.role}
+                      disabled={selectedDivision.status !== 'idle'}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? setDivisionRole(
+                                previous,
+                                selectedDivision.id,
+                                event.target.value as DivisionRole,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      {(['line', 'mobile', 'guard'] as DivisionRole[]).map(
+                        (role) => (
+                          <option key={role} value={role}>
+                            {divisionRoleLabels[role]}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>배속 군</span>
+                    <select
+                      value={selectedDivision.armyId ?? ''}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? assignDivisionToArmy(
+                                previous,
+                                selectedDivision.id,
+                                event.target.value || null,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      <option value="">미배속</option>
+                      {playerArmyList.map((army) => (
+                        <option key={army.id} value={army.id}>
+                          {army.name || '이름 없는 군'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
                 <div className="division-stat-grid">
                   <div>
                     <span>전투력</span>
@@ -1486,6 +1887,13 @@ function App() {
                     <strong>{Math.round(selectedDivision.experience)}%</strong>
                     <i>
                       <b style={{ width: `${selectedDivision.experience}%` }} />
+                    </i>
+                  </div>
+                  <div>
+                    <span>참호화</span>
+                    <strong>{Math.round(selectedDivision.entrenchment)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.entrenchment}%` }} />
                     </i>
                   </div>
                 </div>
@@ -1602,10 +2010,10 @@ function App() {
                 </span>
               </div>
               <div>
-                <strong>5. 작전 강도를 고릅니다</strong>
+                <strong>5. 사단 역할과 군 작전을 사용합니다</strong>
                 <span>
-                  신중·균형·공세는 한 번의 전투에 투입하는 사단 비율과 부담을 바꿉니다.
-                  자동 공세는 원할 때만 켜는 선택 기능입니다.
+                  전열·기동·경비 역할로 사단 성격을 나누고, 여러 사단을 군에 배속할 수 있습니다.
+                  군에 목표를 지정하면 준비도가 쌓이며 작전 실행 시 배속 사단들이 함께 이동합니다.
                 </span>
               </div>
             </div>

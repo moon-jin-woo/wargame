@@ -1,9 +1,11 @@
 import type {
   AiCount,
   AiFactionId,
+  ArmyGroup,
   AttackStance,
   BattleState,
   Difficulty,
+  DivisionRole,
   DivisionUnit,
   Faction,
   FactionId,
@@ -79,6 +81,30 @@ const stanceOrganizationCost: Record<AttackStance, number> = {
   cautious: 1.7,
   balanced: 2.4,
   aggressive: 3.2,
+}
+
+export const divisionRoleLabels: Record<DivisionRole, string> = {
+  line: '전열',
+  mobile: '기동',
+  guard: '경비',
+}
+
+const rolePower: Record<DivisionRole, number> = {
+  line: 1,
+  mobile: 0.94,
+  guard: 0.9,
+}
+
+const roleDefense: Record<DivisionRole, number> = {
+  line: 1,
+  mobile: 0.92,
+  guard: 1.18,
+}
+
+const roleMoveMultiplier: Record<DivisionRole, number> = {
+  line: 1,
+  mobile: 0.72,
+  guard: 1.18,
 }
 
 function activeAiFactions(count: AiCount): AiFactionId[] {
@@ -162,15 +188,21 @@ function makeDivision(
     `${locationId}:${seedSuffix}`,
   ).toString(36)}`
 
+  const role: DivisionRole =
+    ordinal % 5 === 0 ? 'mobile' : ordinal % 4 === 0 ? 'guard' : 'line'
+
   return {
     id,
     owner,
     name: divisionDisplayName(owner, ordinal),
     commander: commanderName(`${owner}:${locationId}:${ordinal}:${seedSuffix}`),
+    role,
+    armyId: null,
     locationId,
     strength: 100,
     organization: 85,
     experience: 0,
+    entrenchment: 0,
     status: 'idle',
     order: null,
     createdTick,
@@ -217,6 +249,266 @@ export function playerDivisions(state: GameState): DivisionUnit[] {
         a.name.localeCompare(b.name, 'ko') ||
         a.id.localeCompare(b.id),
     )
+}
+
+export function playerArmies(state: GameState): ArmyGroup[] {
+  return Object.values(state.armies)
+    .filter((army) => army.owner === 'player')
+    .sort(
+      (a, b) =>
+        a.createdTick - b.createdTick ||
+        a.name.localeCompare(b.name, 'ko'),
+    )
+}
+
+function nextArmyOrdinal(state: GameState): number {
+  return playerArmies(state).length + 1
+}
+
+export function createArmy(state: GameState): GameState {
+  if (state.phase !== 'running') return state
+
+  const ordinal = nextArmyOrdinal(state)
+  const id = `player-army-${state.tick}-${ordinal}`
+  const army: ArmyGroup = {
+    id,
+    owner: 'player',
+    name: `제${ordinal}군`,
+    commander: commanderName(`army:${id}`),
+    divisionIds: [],
+    objectiveId: null,
+    planStatus: 'idle',
+    preparation: 0,
+    createdTick: state.tick,
+  }
+
+  return withEvent(
+    {
+      ...state,
+      selectedArmyId: id,
+      armies: {
+        ...state.armies,
+        [id]: army,
+      },
+    },
+    'military',
+    `${army.name} 창설 · 지휘관 ${army.commander}`,
+  )
+}
+
+export function renameArmy(
+  state: GameState,
+  armyId: string,
+  name: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: { ...army, name: name.slice(0, 28) },
+    },
+  }
+}
+
+export function renameArmyCommander(
+  state: GameState,
+  armyId: string,
+  commander: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: { ...army, commander: commander.slice(0, 24) },
+    },
+  }
+}
+
+export function assignDivisionToArmy(
+  state: GameState,
+  divisionId: string,
+  armyId: string | null,
+): GameState {
+  const division = state.divisionUnits[divisionId]
+  if (!division || division.owner !== 'player') return state
+  if (armyId !== null && state.armies[armyId]?.owner !== 'player') return state
+
+  const armies = Object.fromEntries(
+    Object.entries(state.armies).map(([id, army]) => [
+      id,
+      {
+        ...army,
+        divisionIds: army.divisionIds.filter(
+          (candidateId) => candidateId !== divisionId,
+        ),
+      },
+    ]),
+  ) as Record<string, ArmyGroup>
+
+  if (armyId) {
+    armies[armyId] = {
+      ...armies[armyId],
+      divisionIds: [...armies[armyId].divisionIds, divisionId],
+    }
+  }
+
+  return {
+    ...state,
+    armies,
+    divisionUnits: {
+      ...state.divisionUnits,
+      [divisionId]: {
+        ...division,
+        armyId,
+      },
+    },
+  }
+}
+
+export function setDivisionRole(
+  state: GameState,
+  divisionId: string,
+  role: DivisionRole,
+): GameState {
+  const division = state.divisionUnits[divisionId]
+  if (
+    !division ||
+    division.owner !== 'player' ||
+    division.status !== 'idle'
+  ) {
+    return state
+  }
+
+  return {
+    ...state,
+    divisionUnits: {
+      ...state.divisionUnits,
+      [divisionId]: {
+        ...division,
+        role,
+        entrenchment: 0,
+      },
+    },
+  }
+}
+
+export function setArmyObjective(
+  state: GameState,
+  armyId: string,
+  territoryId: string | null,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+  if (territoryId !== null && !state.territories[territoryId]) return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: {
+        ...army,
+        objectiveId: territoryId,
+        planStatus: territoryId ? 'planning' : 'idle',
+        preparation: territoryId ? 0 : army.preparation,
+      },
+    },
+  }
+}
+
+export function executeArmyPlan(
+  state: GameState,
+  armyId: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (
+    !army ||
+    army.owner !== 'player' ||
+    !army.objectiveId ||
+    !state.territories[army.objectiveId]
+  ) {
+    return state
+  }
+
+  let next = state
+  let issued = 0
+
+  for (const divisionId of army.divisionIds) {
+    const division = next.divisionUnits[divisionId]
+    if (
+      !division ||
+      division.owner !== 'player' ||
+      division.status !== 'idle'
+    ) {
+      continue
+    }
+
+    const ordered = issueDivisionOrder(
+      next,
+      division.id,
+      army.objectiveId,
+    )
+    if (ordered !== next) {
+      next = ordered
+      issued += 1
+    }
+  }
+
+  if (issued === 0) return state
+
+  const currentArmy = next.armies[armyId] ?? army
+  return withEvent(
+    {
+      ...next,
+      armies: {
+        ...next.armies,
+        [armyId]: {
+          ...currentArmy,
+          planStatus: 'executing',
+        },
+      },
+    },
+    'military',
+    `${army.name} · 작전 실행 · ${issued}개 사단 명령`,
+  )
+}
+
+export function haltArmyPlan(
+  state: GameState,
+  armyId: string,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  let next = state
+  for (const divisionId of army.divisionIds) {
+    const division = next.divisionUnits[divisionId]
+    if (!division || division.owner !== 'player') continue
+    if (division.status !== 'idle') {
+      next = cancelDivisionOrder(next, division.id)
+    }
+  }
+
+  const currentArmy = next.armies[armyId] ?? army
+  return withEvent(
+    {
+      ...next,
+      armies: {
+        ...next.armies,
+        [armyId]: {
+          ...currentArmy,
+          planStatus: currentArmy.objectiveId ? 'planning' : 'idle',
+        },
+      },
+    },
+    'military',
+    `${army.name} · 작전 중지`,
+  )
 }
 
 function nextDivisionOrdinal(state: GameState, owner: PlayableFactionId): number {
@@ -314,6 +606,7 @@ export function createInitialState(
     tick: 0,
     selectedId: firstId,
     selectedDivisionId: null,
+    selectedArmyId: null,
     playerName: '플레이어 세력',
     aiNames: {
       red: '적색 세력',
@@ -341,6 +634,7 @@ export function createInitialState(
     productionQueue: [],
     battles: [],
     divisionUnits: {},
+    armies: {},
     territories: normalized,
   }
 }
@@ -478,6 +772,7 @@ export function startGame(state: GameState, startId: string): GameState {
     tick: 0,
     selectedId: startId,
     selectedDivisionId: null,
+    selectedArmyId: null,
     funds: {
       player: STARTING_FUNDS,
       red: STARTING_FUNDS,
@@ -487,6 +782,7 @@ export function startGame(state: GameState, startId: string): GameState {
     productionQueue: [],
     battles: [],
     divisionUnits: {},
+    armies: {},
     events: [],
     territories,
   }
@@ -712,13 +1008,23 @@ function processProduction(state: GameState): GameState {
   return { ...next, productionQueue: remaining }
 }
 
-function movementTicks(source: TerritoryState, target: TerritoryState): number {
+function movementTicks(
+  source: TerritoryState,
+  target: TerritoryState,
+  role: DivisionRole = 'line',
+): number {
   const supplyPenalty = Math.round((100 - source.supply) / 35)
   const distancePenalty = Math.min(
     2,
     Math.floor(Math.sqrt(distanceSquared(source.centroid, target.centroid)) * 5),
   )
-  return clamp(2 + supplyPenalty + distancePenalty, 2, 6)
+  return clamp(
+    Math.ceil(
+      (2 + supplyPenalty + distancePenalty) * roleMoveMultiplier[role],
+    ),
+    1,
+    7,
+  )
 }
 
 function findDivisionRoute(
@@ -830,12 +1136,13 @@ export function issueDivisionOrder(
   const firstStep = state.territories[path[0]]
   if (!firstStep) return state
 
-  const totalTicks = movementTicks(source, firstStep)
+  const totalTicks = movementTicks(source, firstStep, division.role)
   const orderType =
     target.owner === division.owner ? 'move' : 'attack'
 
   const nextDivision: DivisionUnit = {
     ...division,
+    entrenchment: 0,
     status: 'moving',
     order: {
       type: orderType,
@@ -893,6 +1200,7 @@ function startDivisionBattle(
   if (existing) {
     const nextDivision: DivisionUnit = {
       ...division,
+      entrenchment: 0,
       status: 'attacking',
       order: {
         type: 'attack',
@@ -931,9 +1239,10 @@ function startDivisionBattle(
   const defenders = defenderIdsAt(state, targetId, target.owner)
 
   if (defenders.length === 0 && target.defense === 0) {
-    const totalTicks = movementTicks(source, target)
+    const totalTicks = movementTicks(source, target, division.role)
     const nextDivision: DivisionUnit = {
       ...division,
+      entrenchment: 0,
       status: 'moving',
       order: {
         type: 'move',
@@ -968,6 +1277,7 @@ function startDivisionBattle(
   const divisionUnits = { ...state.divisionUnits }
   divisionUnits[division.id] = {
     ...division,
+    entrenchment: 0,
     status: 'attacking',
     order: {
       type: 'attack',
@@ -1170,7 +1480,7 @@ function processMovement(state: GameState): GameState {
         continue
       }
 
-      const legTicks = movementTicks(nextStep, following)
+      const legTicks = movementTicks(nextStep, following, division.role)
       nextOrder = {
         ...order,
         path: remainingPath,
@@ -1182,6 +1492,7 @@ function processMovement(state: GameState): GameState {
     divisionUnits[division.id] = {
       ...division,
       locationId: nextStep.id,
+      entrenchment: 0,
       status: arrivedAtFinal ? 'idle' : 'moving',
       order: nextOrder,
       organization: Math.max(30, division.organization - 2.5),
@@ -1238,13 +1549,42 @@ function processMovement(state: GameState): GameState {
   return next
 }
 
-function divisionCombatPower(division: DivisionUnit): number {
+function divisionCombatPower(
+  division: DivisionUnit,
+  defending = false,
+): number {
+  const roleModifier = defending
+    ? roleDefense[division.role]
+    : rolePower[division.role]
+  const entrenchmentModifier = defending
+    ? 1 + division.entrenchment * 0.002
+    : 1
+
   return (
     DIVISION_POWER *
+    roleModifier *
+    entrenchmentModifier *
     (division.strength / 100) *
     (0.35 + division.organization / 150) *
     (1 + division.experience / 300)
   )
+}
+
+function armyCommandModifier(
+  state: GameState,
+  division: DivisionUnit,
+  attacking: boolean,
+): number {
+  if (!division.armyId) return 1
+  const army = state.armies[division.armyId]
+  if (!army) return 1
+
+  const commanderBonus = army.commander.trim() ? 1.03 : 1
+  const planningBonus = attacking
+    ? 1 + clamp(army.preparation, 0, 100) / 600
+    : 1
+
+  return commanderBonus * planningBonus
 }
 
 function chooseRetreatTerritory(
@@ -1352,7 +1692,10 @@ function processBattles(state: GameState): GameState {
 
     const attackerPower =
       attackers.reduce(
-        (sum, division) => sum + divisionCombatPower(division),
+        (sum, division) =>
+          sum +
+          divisionCombatPower(division, false) *
+            armyCommandModifier(next, division, true),
         0,
       ) *
       (0.62 + averageAttackerSupply / 210) *
@@ -1360,7 +1703,10 @@ function processBattles(state: GameState): GameState {
 
     const defenderPower =
       defenders.reduce(
-        (sum, division) => sum + divisionCombatPower(division),
+        (sum, division) =>
+          sum +
+          divisionCombatPower(division, true) *
+            armyCommandModifier(next, division, false),
         0,
       ) *
         (0.68 + target.supply / 220) +
@@ -1683,7 +2029,7 @@ function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
       )
 
     if (friendlyFront) {
-      const totalTicks = movementTicks(territory, friendlyFront)
+      const totalTicks = movementTicks(territory, friendlyFront, current.role)
       next = setDivision(next, {
         ...current,
         status: 'moving',
@@ -1778,21 +2124,102 @@ function recoverDivisions(state: GameState): GameState {
       100,
       division.strength + (territory.supply >= 70 ? 0.35 : 0.08),
     )
+    const entrenchGain =
+      division.role === 'guard' ? 4 : division.role === 'mobile' ? 1.8 : 3
+    const entrenchment = Math.min(
+      100,
+      division.entrenchment + entrenchGain,
+    )
 
     if (
       organization !== division.organization ||
-      strength !== division.strength
+      strength !== division.strength ||
+      entrenchment !== division.entrenchment
     ) {
       divisionUnits[id] = {
         ...division,
         organization,
         strength,
+        entrenchment,
       }
       changed = true
     }
   }
 
   return changed ? { ...state, divisionUnits } : state
+}
+
+function processArmyPlanning(state: GameState): GameState {
+  if (Object.keys(state.armies).length === 0) return state
+
+  const armies: Record<string, ArmyGroup> = {}
+  let changed = false
+
+  for (const [id, army] of Object.entries(state.armies)) {
+    const divisionIds = army.divisionIds.filter(
+      (divisionId) => state.divisionUnits[divisionId]?.armyId === id,
+    )
+    const objective = army.objectiveId
+      ? state.territories[army.objectiveId]
+      : null
+    const assigned = divisionIds
+      .map((divisionId) => state.divisionUnits[divisionId])
+      .filter((division): division is DivisionUnit => Boolean(division))
+    const activeCount = assigned.filter(
+      (division) => division.status !== 'idle',
+    ).length
+
+    let planStatus = army.planStatus
+    let preparation = army.preparation
+    let objectiveId = army.objectiveId
+
+    if (objectiveId && objective?.owner === army.owner) {
+      objectiveId = null
+      planStatus = 'idle'
+      preparation = Math.max(0, preparation - 20)
+    } else if (planStatus === 'planning' && objectiveId) {
+      const readiness =
+        assigned.length === 0
+          ? 0
+          : assigned.reduce(
+              (sum, division) =>
+                sum +
+                division.organization * 0.6 +
+                division.strength * 0.4,
+              0,
+            ) /
+            assigned.length /
+            100
+      preparation = Math.min(
+        100,
+        preparation + 1.2 + readiness * 1.8,
+      )
+    } else if (planStatus === 'executing') {
+      preparation = Math.max(0, preparation - 1.5)
+      if (activeCount === 0) {
+        planStatus = objectiveId ? 'planning' : 'idle'
+      }
+    }
+
+    if (
+      divisionIds.length !== army.divisionIds.length ||
+      planStatus !== army.planStatus ||
+      preparation !== army.preparation ||
+      objectiveId !== army.objectiveId
+    ) {
+      changed = true
+    }
+
+    armies[id] = {
+      ...army,
+      divisionIds,
+      objectiveId,
+      planStatus,
+      preparation,
+    }
+  }
+
+  return changed ? { ...state, armies } : state
 }
 
 function applyIncome(state: GameState): GameState {
@@ -1885,6 +2312,7 @@ export function advanceTick(state: GameState): GameState {
     territories,
   }
 
+  next = processArmyPlanning(next)
   next = processProduction(next)
   next = processMovement(next)
   next = processBattles(next)
