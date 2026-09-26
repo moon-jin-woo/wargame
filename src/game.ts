@@ -3359,18 +3359,23 @@ function recoverDivisions(state: GameState): GameState {
     const militaryCapacity = territory.industry.military
     const massProductionLevel =
       state.technologies[division.owner]?.massProduction ?? 0
+    const automationLevel =
+      state.technologies[division.owner]?.industrialAutomation ?? 0
     const strength = Math.min(
       100,
       division.strength +
         (territory.supply >= 70 ? 0.25 : 0.05) +
         militaryCapacity * 0.08 +
-        massProductionLevel * 0.07,
+        massProductionLevel * 0.07 +
+        automationLevel * 0.04,
     )
     const engineeringLevel =
       state.technologies[division.owner]?.fieldEngineering ?? 0
     const defensiveWorksLevel =
       state.technologies[division.owner]?.defensiveWorks ?? 0
     const armyStrategy = divisionStrategy(state, division)
+    const nationalStrategy =
+      state.nationalStrategies[division.owner] ?? 'balancedDevelopment'
     const entrenchGain =
       (division.role === 'guard'
         ? 4
@@ -3378,7 +3383,8 @@ function recoverDivisions(state: GameState): GameState {
           ? 1.8
           : 3) *
       (1 + engineeringLevel * 0.1 + defensiveWorksLevel * 0.06) *
-      (armyStrategy === 'defensive' ? 1.12 : 1)
+      (armyStrategy === 'defensive' ? 1.12 : 1) *
+      (nationalStrategy === 'fortifiedState' ? 1.18 : 1)
     const entrenchment = Math.min(
       100,
       division.entrenchment + entrenchGain,
@@ -3603,6 +3609,12 @@ export function advanceTick(state: GameState): GameState {
         state.technologies[owner]?.railOperations ?? 0
       const supplyOptimizationLevel =
         state.technologies[owner]?.supplyOptimization ?? 0
+      const networkSchedulingLevel =
+        state.technologies[owner]?.networkScheduling ?? 0
+      const depotManagementLevel =
+        state.technologies[owner]?.depotManagement ?? 0
+      const nationalStrategy =
+        state.nationalStrategies[owner] ?? 'balancedDevelopment'
       const railwayConnected =
         territory.railway > 0 &&
         territory.neighbors.some((neighborId) => {
@@ -3613,7 +3625,11 @@ export function advanceTick(state: GameState): GameState {
           )
         })
       const railwayBonus = railwayConnected
-        ? territory.railway * (0.34 + railOperationsLevel * 0.11)
+        ? territory.railway *
+          (0.34 +
+            railOperationsLevel * 0.11 +
+            networkSchedulingLevel * 0.07) *
+          (nationalStrategy === 'railwayPriority' ? 1.28 : 1)
         : 0
 
       const supplyDelta = connected
@@ -3622,6 +3638,7 @@ export function advanceTick(state: GameState): GameState {
             infrastructureLevel * 0.28 +
             technologyLevel * 0.3 +
             supplyOptimizationLevel * 0.24 +
+            depotManagementLevel * 0.22 +
             railwayBonus) *
           terrainSupply[territory.terrain]
         : -Math.max(
@@ -3631,7 +3648,11 @@ export function advanceTick(state: GameState): GameState {
               infrastructureLevel * 0.18 -
               technologyLevel * 0.16 -
               supplyOptimizationLevel * 0.2 -
-              (territory.railway > 0 ? railOperationsLevel * 0.1 : 0)) /
+              depotManagementLevel * 0.14 -
+              (territory.railway > 0
+                ? railOperationsLevel * 0.1 +
+                  networkSchedulingLevel * 0.06
+                : 0)) /
               Math.max(0.65, terrainSupply[territory.terrain]),
           )
 
