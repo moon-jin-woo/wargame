@@ -147,6 +147,7 @@ describe('individual division game loop', () => {
 
     state = {
       ...state,
+      difficulty: 'easy',
       territories: {
         ...state.territories,
         c: {
