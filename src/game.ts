@@ -932,6 +932,7 @@ function startDivisionBattle(
       order: {
         type: 'move',
         targetId,
+        path: [targetId],
         totalTicks,
         remainingTicks: totalTicks,
         issuedTick: state.tick,
@@ -965,6 +966,7 @@ function startDivisionBattle(
     order: {
       type: 'attack',
       targetId,
+      path: [targetId],
       totalTicks: 0,
       remainingTicks: 0,
       issuedTick: state.tick,
@@ -1660,6 +1662,7 @@ function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
         order: {
           type: 'move',
           targetId: friendlyFront.id,
+          path: [friendlyFront.id],
           totalTicks,
           remainingTicks: totalTicks,
           issuedTick: next.tick,
