@@ -656,6 +656,15 @@ function App() {
     game?.selectedDivisionId
       ? game.divisionUnits[game.selectedDivisionId] ?? null
       : null
+  const selectedArmy =
+    game?.selectedArmyId
+      ? game.armies[game.selectedArmyId] ?? null
+      : null
+
+  const playerArmyList = useMemo(
+    () => (game ? playerArmies(game) : []),
+    [game?.armies],
+  )
 
   const playerDivisionList = useMemo(
     () => (game ? playerDivisions(game) : []),
@@ -721,101 +730,154 @@ function App() {
   )
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapLoaded || !game) return
+    if (!map || !layerReady || !game) return
 
-    for (const marker of divisionMarkersRef.current.values()) {
-      marker.remove()
-    }
-    divisionMarkersRef.current.clear()
+    const source = map.getSource(
+      DIVISION_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
 
-    for (const stack of divisionStacks) {
-      const territory = game.territories[stack.territoryId]
-      if (!territory) continue
+    const features = divisionStacks
+      .map((stack) => {
+        const territory = game.territories[stack.territoryId]
+        if (!territory) return null
 
-      const element = document.createElement('button')
-      element.type = 'button'
-      element.className = 'division-map-counter'
-      element.style.setProperty('--division-color', ownerColor(stack.owner, game))
-      element.dataset.selected = stack.ids.includes(game.selectedDivisionId ?? '')
-        ? 'true'
-        : 'false'
-      element.dataset.fighting = stack.fighting > 0 ? 'true' : 'false'
-      element.dataset.moving = stack.moving > 0 ? 'true' : 'false'
-      element.innerHTML = `<span class="division-symbol">◆</span><strong>${stack.ids.length}</strong>`
-      element.title = `${ownerName(stack.owner, game)} · ${territory.name} · 사단 ${stack.ids.length}`
+        const roles = stack.ids
+          .map((id) => game.divisionUnits[id]?.role)
+          .filter((role): role is DivisionRole => Boolean(role))
+        const mobileCount = roles.filter((role) => role === 'mobile').length
+        const guardCount = roles.filter((role) => role === 'guard').length
+        const symbol =
+          mobileCount > roles.length / 2
+            ? '◇'
+            : guardCount > roles.length / 2
+              ? '■'
+              : '◆'
 
-      element.addEventListener('click', (event) => {
-        event.stopPropagation()
-        setGame((previous) => {
-          if (!previous) return previous
-
-          const selectedUnit = previous.selectedDivisionId
-            ? previous.divisionUnits[previous.selectedDivisionId]
-            : null
-
-          if (
-            stack.owner !== 'player' &&
-            selectedUnit?.owner === 'player' &&
-            selectedUnit.status === 'idle' &&
-            selectedUnit.locationId !== stack.territoryId
-          ) {
-            const ordered = issueDivisionOrder(
-              previous,
-              selectedUnit.id,
-              stack.territoryId,
-            )
-
-            if (ordered !== previous) {
-              return {
-                ...ordered,
-                selectedId: stack.territoryId,
-                selectedDivisionId: selectedUnit.id,
-              }
-            }
-          }
-
-          const playerUnit = stack.ids
-            .map((id) => previous.divisionUnits[id])
-            .find((division) => division?.owner === 'player')
-
-          return {
-            ...previous,
-            selectedId: stack.territoryId,
-            selectedDivisionId:
-              playerUnit?.id ??
-              (stack.owner === 'player'
-                ? previous.selectedDivisionId
-                : null),
-          }
-        })
-
-        if (stack.owner === 'player') {
-          setArmyOpen(true)
+        return {
+          type: 'Feature' as const,
+          id: stack.key,
+          properties: {
+            key: stack.key,
+            territoryId: stack.territoryId,
+            owner: stack.owner,
+            ids: stack.ids.join(','),
+            count: stack.ids.length,
+            symbol,
+            moving: stack.moving > 0,
+            fighting: stack.fighting > 0,
+            selected: stack.ids.includes(game.selectedDivisionId ?? ''),
+            color: ownerColor(stack.owner, game),
+          },
+          geometry: {
+            type: 'Point' as const,
+            coordinates: territory.centroid,
+          },
         }
       })
+      .filter((feature): feature is NonNullable<typeof feature> =>
+        Boolean(feature),
+      )
 
-      const marker = new maplibregl.Marker({
-        element,
-        anchor: 'center',
-      })
-        .setLngLat(territory.centroid)
-        .addTo(map)
-
-      divisionMarkersRef.current.set(stack.key, marker)
-    }
-
-    return () => {
-      for (const marker of divisionMarkersRef.current.values()) {
-        marker.remove()
-      }
-      divisionMarkersRef.current.clear()
-    }
+    source.setData({
+      type: 'FeatureCollection',
+      features,
+    })
   }, [
-    mapLoaded,
+    layerReady,
     divisionStackSignature,
     game?.selectedDivisionId,
     game?.factionColors,
   ])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady) return
+
+    const clickHandler = (
+      event: maplibregl.MapLayerMouseEvent,
+    ) => {
+      const properties = event.features?.[0]?.properties
+      if (!properties) return
+
+      const territoryId = String(properties.territoryId ?? '')
+      const owner = String(properties.owner ?? '')
+      const ids = String(properties.ids ?? '')
+        .split(',')
+        .filter(Boolean)
+      if (!territoryId || ids.length === 0) return
+
+      setGame((previous) => {
+        if (!previous) return previous
+
+        const selectedUnit = previous.selectedDivisionId
+          ? previous.divisionUnits[previous.selectedDivisionId]
+          : null
+
+        if (
+          owner !== 'player' &&
+          selectedUnit?.owner === 'player' &&
+          selectedUnit.status === 'idle' &&
+          selectedUnit.locationId !== territoryId
+        ) {
+          const ordered = issueDivisionOrder(
+            previous,
+            selectedUnit.id,
+            territoryId,
+          )
+
+          if (ordered !== previous) {
+            return {
+              ...ordered,
+              selectedId: territoryId,
+              selectedDivisionId: selectedUnit.id,
+            }
+          }
+        }
+
+        const playerUnit = ids
+          .map((id) => previous.divisionUnits[id])
+          .find((division) => division?.owner === 'player')
+
+        return {
+          ...previous,
+          selectedId: territoryId,
+          selectedDivisionId:
+            playerUnit?.id ??
+            (owner === 'player'
+              ? previous.selectedDivisionId
+              : null),
+        }
+      })
+
+      if (owner === 'player') {
+        setArmyOpen(true)
+      }
+    }
+
+    const enterHandler = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const leaveHandler = () => {
+      map.getCanvas().style.cursor = ''
+    }
+
+    map.on('click', DIVISION_COUNTER_LAYER_ID, clickHandler)
+    map.on('click', DIVISION_LABEL_LAYER_ID, clickHandler)
+    map.on('mouseenter', DIVISION_COUNTER_LAYER_ID, enterHandler)
+    map.on('mouseenter', DIVISION_LABEL_LAYER_ID, enterHandler)
+    map.on('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
+    map.on('mouseleave', DIVISION_LABEL_LAYER_ID, leaveHandler)
+
+    return () => {
+      map.off('click', DIVISION_COUNTER_LAYER_ID, clickHandler)
+      map.off('click', DIVISION_LABEL_LAYER_ID, clickHandler)
+      map.off('mouseenter', DIVISION_COUNTER_LAYER_ID, enterHandler)
+      map.off('mouseenter', DIVISION_LABEL_LAYER_ID, enterHandler)
+      map.off('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
+      map.off('mouseleave', DIVISION_LABEL_LAYER_ID, leaveHandler)
+    }
+  }, [layerReady])
 
   useEffect(() => {
     const map = mapRef.current
