@@ -86,6 +86,13 @@ function productionLabel(kind: ProductionKind): string {
   return '방어 공사'
 }
 
+function divisionStatusLabel(division: DivisionUnit): string {
+  if (division.status === 'moving') return '이동 중'
+  if (division.status === 'attacking') return '공격 중'
+  if (division.status === 'defending') return '방어 중'
+  return '대기'
+}
+
 function ownerName(owner: FactionId, game: GameState): string {
   if (owner === 'player') return game.playerName || '—'
   if (owner === 'neutral') return factions.neutral.name
@@ -1333,7 +1340,7 @@ function App() {
                             {from?.name ?? '?'} → {to?.name ?? '?'}
                           </strong>
                           <span>
-                            {battle.committedDivisions}개 사단 · {attackStanceLabels[battle.stance]}
+                            {battle.attackerDivisionIds.length}개 사단 · {attackStanceLabels[battle.stance]}
                           </span>
                         </div>
                         <div className="battle-progress">
@@ -1365,6 +1372,163 @@ function App() {
                   </div>
                 ))}
               </div>
+            </div>
+          </section>
+        )}
+
+        {game?.phase === 'running' && armyOpen && (
+          <section className="floating-panel army-panel">
+            <div className="floating-panel-head">
+              <div>
+                <p className="eyebrow">사단 지휘부</p>
+                <h2>배치 사단 {playerDivisionList.length}개</h2>
+              </div>
+              <button onClick={() => setArmyOpen(false)}>닫기</button>
+            </div>
+
+            {selectedDivision?.owner === 'player' && (
+              <div className="division-inspector">
+                <div className="division-inspector-title">
+                  <span className="division-counter-icon">◆</span>
+                  <div>
+                    <strong>{selectedDivision.name || '이름 없는 사단'}</strong>
+                    <span>
+                      {game.territories[selectedDivision.locationId]?.fullName ?? '위치 없음'}
+                    </span>
+                  </div>
+                  <b>{divisionStatusLabel(selectedDivision)}</b>
+                </div>
+
+                <label className="division-edit-field">
+                  <span>사단 명칭</span>
+                  <input
+                    value={selectedDivision.name}
+                    maxLength={32}
+                    onChange={(event) =>
+                      setGame((previous) =>
+                        previous
+                          ? renameDivision(
+                              previous,
+                              selectedDivision.id,
+                              event.target.value,
+                            )
+                          : previous,
+                      )
+                    }
+                  />
+                </label>
+
+                <label className="division-edit-field">
+                  <span>지휘관</span>
+                  <input
+                    value={selectedDivision.commander}
+                    maxLength={24}
+                    onChange={(event) =>
+                      setGame((previous) =>
+                        previous
+                          ? renameCommander(
+                              previous,
+                              selectedDivision.id,
+                              event.target.value,
+                            )
+                          : previous,
+                      )
+                    }
+                  />
+                </label>
+
+                <div className="division-stat-grid">
+                  <div>
+                    <span>전투력</span>
+                    <strong>{Math.round(selectedDivision.strength)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.strength}%` }} />
+                    </i>
+                  </div>
+                  <div>
+                    <span>조직력</span>
+                    <strong>{Math.round(selectedDivision.organization)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.organization}%` }} />
+                    </i>
+                  </div>
+                  <div>
+                    <span>경험</span>
+                    <strong>{Math.round(selectedDivision.experience)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.experience}%` }} />
+                    </i>
+                  </div>
+                </div>
+
+                {selectedDivision.order ? (
+                  <div className="division-order-card">
+                    <div>
+                      <strong>
+                        {selectedDivision.order.type === 'attack'
+                          ? '공격 이동'
+                          : '이동'}
+                      </strong>
+                      <span>
+                        → {game.territories[selectedDivision.order.targetId]?.fullName ?? '목적지 없음'}
+                      </span>
+                    </div>
+                    <small>
+                      경로 {selectedDivision.order.path.length}구간
+                      {selectedDivision.status === 'moving'
+                        ? ` · 현재 구간 ${selectedDivision.order.remainingTicks}틱`
+                        : ''}
+                    </small>
+                    <button
+                      onClick={() =>
+                        setGame((previous) =>
+                          previous
+                            ? cancelDivisionOrder(
+                                previous,
+                                selectedDivision.id,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      현재 명령 취소
+                    </button>
+                  </div>
+                ) : (
+                  <div className="division-order-hint">
+                    지도에서 목적지를 클릭하세요. 아군 지역이면 이동, 다른 세력 지역이면 전선까지 이동 후 공격합니다.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="division-list">
+              {playerDivisionList.map((division) => {
+                const territory = game.territories[division.locationId]
+                const selectedUnit = game.selectedDivisionId === division.id
+
+                return (
+                  <button
+                    key={division.id}
+                    className={selectedUnit ? 'selected' : ''}
+                    onClick={() => selectDivision(division.id)}
+                  >
+                    <span className="division-list-symbol">◆</span>
+                    <div>
+                      <strong>{division.name || '이름 없는 사단'}</strong>
+                      <span>
+                        {division.commander || '지휘관 미지정'} · {territory?.name ?? '위치 없음'}
+                      </span>
+                    </div>
+                    <div className="division-list-state">
+                      <b>{divisionStatusLabel(division)}</b>
+                      <small>
+                        {Math.round(division.strength)}/{Math.round(division.organization)}
+                      </small>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           </section>
         )}
@@ -1467,6 +1631,14 @@ function App() {
             onClick={() => setCommandOpen((open) => !open)}
           >
             지휘
+          </button>
+          <button
+            className={armyOpen ? 'active' : ''}
+            disabled={game?.phase !== 'running'}
+            onClick={() => setArmyOpen((open) => !open)}
+          >
+            사단
+            {playerDivisionList.length > 0 && <b>{playerDivisionList.length}</b>}
           </button>
           <button
             className={productionOpen ? 'active' : ''}
@@ -1894,7 +2066,7 @@ function App() {
                 <small>
                   {game.territories[selectedBattle.fromId]?.name ?? '?'} →{' '}
                   {game.territories[selectedBattle.toId]?.name ?? '?'} ·{' '}
-                  {selectedBattle.committedDivisions}개 사단
+                  {selectedBattle.attackerDivisionIds.length}개 사단
                 </small>
               </div>
             )}
