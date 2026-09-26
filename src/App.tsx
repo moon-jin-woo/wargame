@@ -7,8 +7,10 @@ import {
   buildDivision,
   buildFactory,
   cancelProduction,
-  captureTerritory,
   createInitialState,
+  divisionMilitaryPower,
+  haltDivisions,
+  issueDivisionOrder,
   defenseUpgradeCost,
   difficultyLabels,
   DIVISION_COST,
@@ -21,9 +23,10 @@ import {
   MAX_FACTORIES,
   ownerCounts,
   productionDuration,
+  renameCommander,
+  renameDivision,
   startGame,
   territoryMilitaryPower,
-  transferTroops,
   upgradeDefense,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
@@ -34,6 +37,7 @@ import type {
   AiFactionId,
   Difficulty,
   AttackStance,
+  DivisionState,
   FactionId,
   GameSpeed,
   GameState,
@@ -98,6 +102,7 @@ function App() {
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
   const previousBattleTerritories = useRef<Set<string>>(new Set())
+  const divisionMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -114,6 +119,8 @@ function App() {
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
+  const [divisionsOpen, setDivisionsOpen] = useState(false)
+  const [selectedDivisionIds, setSelectedDivisionIds] = useState<string[]>([])
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -709,25 +716,25 @@ function App() {
   }, [game?.territories, selected?.id])
 
   const handleTerritoryCommand = (targetId: string) => {
-    setGame((previous) => {
-      if (!previous || !previous.territories[targetId]) return previous
+    if (selectedDivisionIds.length > 0) {
+      setGame((previous) =>
+        previous
+          ? issueDivisionOrder(previous, selectedDivisionIds, targetId)
+          : previous,
+      )
+      setGame((previous) =>
+        previous && previous.territories[targetId]
+          ? { ...previous, selectedId: targetId }
+          : previous,
+      )
+      return
+    }
 
-      const sourceId = previous.selectedId
-      const source = sourceId ? previous.territories[sourceId] : null
-      const target = previous.territories[targetId]
-
-      if (
-        previous.phase === 'running' &&
-        source &&
-        source.owner === 'player' &&
-        target.owner !== 'player' &&
-        source.neighbors.includes(targetId)
-      ) {
-        return captureTerritory(previous, source.id, targetId)
-      }
-
-      return { ...previous, selectedId: targetId }
-    })
+    setGame((previous) =>
+      previous && previous.territories[targetId]
+        ? { ...previous, selectedId: targetId }
+        : previous,
+    )
   }
 
   const focusSelected = () => {
