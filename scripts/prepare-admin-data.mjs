@@ -115,6 +115,72 @@ function stitchDisconnectedAreas(adjacency, centroids) {
   return components.length
 }
 
+function polygonExtent(feature) {
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+
+  for (const ring of rings(feature)) {
+    for (const point of ring) {
+      minX = Math.min(minX, point[0])
+      minY = Math.min(minY, point[1])
+      maxX = Math.max(maxX, point[0])
+      maxY = Math.max(maxY, point[1])
+    }
+  }
+
+  if (!Number.isFinite(minX)) return 0
+  return Math.max(0, (maxX - minX) * (maxY - minY))
+}
+
+function classifyTerrain({
+  feature,
+  emdnm,
+  sidonm,
+  isIsland,
+  outerBoundarySegments,
+}) {
+  if (isIsland) return 'island'
+
+  const extent = polygonExtent(feature)
+  const urbanProvince =
+    sidonm.includes('서울') ||
+    sidonm.includes('부산') ||
+    sidonm.includes('대구') ||
+    sidonm.includes('인천') ||
+    sidonm.includes('광주') ||
+    sidonm.includes('대전') ||
+    sidonm.includes('울산') ||
+    sidonm.includes('세종')
+
+  if (
+    emdnm.endsWith('동') &&
+    (urbanProvince || extent < 0.0009)
+  ) {
+    return 'urban'
+  }
+
+  if (outerBoundarySegments >= 2) return 'coastal'
+  if (/[산령봉재곡]/.test(emdnm)) return 'mountain'
+
+  if (emdnm.endsWith('면')) {
+    if (extent > 0.018) return 'mountain'
+    if (extent > 0.007) return 'forest'
+    return 'hills'
+  }
+
+  if (emdnm.endsWith('읍')) {
+    if (extent > 0.012) return 'hills'
+    return 'plains'
+  }
+
+  if (extent > 0.025) return 'mountain'
+  if (extent > 0.01) return 'forest'
+  if (extent > 0.004) return 'hills'
+  return 'plains'
+}
+
 function hashString(value) {
   let hash = 2166136261
   for (let i = 0; i < value.length; i += 1) {
@@ -170,6 +236,7 @@ sourceFeatures.forEach((feature, index) => {
 
 const adjacency = new Map()
 const segmentOwners = new Map()
+const segmentUseCount = new Map()
 ids.forEach((id) => adjacency.set(id, new Set()))
 
 let segmentCount = 0
@@ -182,6 +249,7 @@ sourceFeatures.forEach((feature, index) => {
     for (let i = 0; i < ring.length - 1; i += 1) {
       segmentCount += 1
       const key = segmentKey(ring[i], ring[i + 1])
+      segmentUseCount.set(key, (segmentUseCount.get(key) ?? 0) + 1)
       const other = segmentOwners.get(key)
 
       if (other && other !== id) {
@@ -195,7 +263,21 @@ sourceFeatures.forEach((feature, index) => {
   }
 })
 
-const componentsBeforeStitch = stitchDisconnectedAreas(adjacency, centroids)
+const preStitchComponents = connectedComponents(adjacency)
+const mainlandIds = new Set(preStitchComponents[0] ?? [])
+const componentsBeforeStitch = preStitchComponents.length
+stitchDisconnectedAreas(adjacency, centroids)
+
+const outerBoundarySegments = new Map(ids.map((id) => [id, 0]))
+for (const [key, owner] of segmentOwners.entries()) {
+  if ((segmentUseCount.get(key) ?? 0) === 1) {
+    outerBoundarySegments.set(
+      owner,
+      (outerBoundarySegments.get(owner) ?? 0) + 1,
+    )
+  }
+}
+
 const territories = {}
 
 const features = sourceFeatures.map((feature, index) => {
@@ -205,6 +287,13 @@ const features = sourceFeatures.map((feature, index) => {
   const sggnm = asString(p.sggnm)
   const sidonm = asString(p.sidonm)
   const baseTroops = 18 + (hashString(id) % 18)
+  const terrain = classifyTerrain({
+    feature,
+    emdnm,
+    sidonm,
+    isIsland: !mainlandIds.has(id),
+    outerBoundarySegments: outerBoundarySegments.get(id) ?? 0,
+  })
 
   territories[id] = {
     id,
@@ -215,6 +304,17 @@ const features = sourceFeatures.map((feature, index) => {
     owner: 'neutral',
     troops: baseTroops,
     supply: 55,
+    factories: 0,
+    industry: {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    },
+    terrain,
+    divisions: 0,
+    defense: 0,
     neighbors: Array.from(adjacency.get(id) ?? []).sort(),
     centroid: centroids.get(id) ?? [127.7, 36.25],
   }
@@ -231,6 +331,7 @@ const features = sourceFeatures.map((feature, index) => {
       sggcd: asString(p.sggcd),
       sggnm,
       sidonm,
+      terrain,
     },
     geometry: feature.geometry,
   }
