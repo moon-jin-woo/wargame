@@ -2256,12 +2256,25 @@ function armyCommandModifier(
   const army = state.armies[division.armyId]
   if (!army) return 1
 
-  const commanderBonus = army.commander.trim() ? 1.03 : 1
+  const staffLevel =
+    state.technologies[division.owner]?.staffCoordination ?? 0
+  const planningLevel =
+    state.technologies[division.owner]?.operationalPlanning ?? 0
+  const commanderBonus =
+    (army.commander.trim() ? 1.03 : 1) * (1 + staffLevel * 0.018)
   const planningBonus = attacking
-    ? 1 + clamp(army.preparation, 0, 100) / 600
+    ? 1 +
+      clamp(army.preparation, 0, 100) / 600 +
+      planningLevel * 0.025
     : 1
 
-  return commanderBonus * planningBonus
+  return (
+    commanderBonus *
+    planningBonus *
+    (attacking
+      ? strategyAttack[army.strategy]
+      : strategyDefense[army.strategy])
+  )
 }
 
 function chooseRetreatTerritory(
@@ -2859,21 +2872,28 @@ function recoverDivisions(state: GameState): GameState {
       division.organization + (territory.supply >= 55 ? 2.2 : 0.6),
     )
     const militaryCapacity = territory.industry.military
+    const massProductionLevel =
+      state.technologies[division.owner]?.massProduction ?? 0
     const strength = Math.min(
       100,
       division.strength +
         (territory.supply >= 70 ? 0.25 : 0.05) +
-        militaryCapacity * 0.08,
+        militaryCapacity * 0.08 +
+        massProductionLevel * 0.07,
     )
     const engineeringLevel =
       state.technologies[division.owner]?.fieldEngineering ?? 0
+    const defensiveWorksLevel =
+      state.technologies[division.owner]?.defensiveWorks ?? 0
+    const armyStrategy = divisionStrategy(state, division)
     const entrenchGain =
       (division.role === 'guard'
         ? 4
         : division.role === 'mobile'
           ? 1.8
           : 3) *
-      (1 + engineeringLevel * 0.1)
+      (1 + engineeringLevel * 0.1 + defensiveWorksLevel * 0.06) *
+      (armyStrategy === 'defensive' ? 1.12 : 1)
     const entrenchment = Math.min(
       100,
       division.entrenchment + entrenchGain,
@@ -2940,12 +2960,16 @@ function processArmyPlanning(state: GameState): GameState {
             100
       const commandLevel =
         state.technologies[army.owner]?.commandNetwork ?? 0
+      const planningLevel =
+        state.technologies[army.owner]?.operationalPlanning ?? 0
       preparation = Math.min(
         100,
         preparation +
-          1.2 +
-          readiness * 1.8 +
-          commandLevel * 0.45,
+          (1.2 +
+            readiness * 1.8 +
+            commandLevel * 0.45 +
+            planningLevel * 0.28) *
+            strategyPreparation[army.strategy],
       )
     } else if (planStatus === 'executing') {
       preparation = Math.max(0, preparation - 1.5)
@@ -2979,9 +3003,7 @@ function maybeAiResearch(
   state: GameState,
   owner: AiFactionId,
 ): GameState {
-  const technologies = (
-    Object.keys(state.technologies[owner]) as TechnologyId[]
-  ).sort(
+  const technologies = [...TECHNOLOGY_IDS].sort(
     (a, b) =>
       state.technologies[owner][a] -
         state.technologies[owner][b] ||
@@ -2990,9 +3012,9 @@ function maybeAiResearch(
   )
 
   const candidate = technologies.find((technology) => {
-    const level = state.technologies[owner][technology]
+    const level = state.technologies[owner][technology] ?? 0
     return (
-      level < TECHNOLOGY_MAX_LEVEL &&
+      technologyAvailable(state, owner, technology) &&
       state.researchPoints[owner] >= technologyCost(technology, level)
     )
   })
