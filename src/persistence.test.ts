@@ -113,7 +113,12 @@ describe('division save migration', () => {
           ...base.technologies.player,
           industrialMethods: 1,
           logisticsPlanning: 2,
+          networkScheduling: 1,
         },
+      },
+      nationalStrategies: {
+        ...base.nationalStrategies,
+        player: 'railwayPriority' as const,
       },
       divisionUnits: { [unit.id]: unit },
       armies: {
@@ -126,6 +131,7 @@ describe('division save migration', () => {
           objectiveId: 'b',
           planStatus: 'planning' as const,
           strategy: 'logistics' as const,
+          theater: '테스트 전구',
           preparation: 48,
           createdTick: 2,
         },
@@ -162,6 +168,7 @@ describe('division save migration', () => {
     expect(restored?.armies['army-test'].commander).toBe('박준혁')
     expect(restored?.armies['army-test'].preparation).toBe(48)
     expect(restored?.armies['army-test'].strategy).toBe('logistics')
+    expect(restored?.armies['army-test'].theater).toBe('테스트 전구')
     expect(restored?.selectedDivisionId).toBe(unit.id)
     expect(restored?.selectedArmyId).toBe('army-test')
     expect(restored?.territories.a.terrain).toBe('mountain')
@@ -171,6 +178,8 @@ describe('division save migration', () => {
     expect(restored?.researchPoints.player).toBe(123)
     expect(restored?.technologies.player.industrialMethods).toBe(1)
     expect(restored?.technologies.player.logisticsPlanning).toBe(2)
+    expect(restored?.technologies.player.networkScheduling).toBe(1)
+    expect(restored?.nationalStrategies.player).toBe('railwayPriority')
   })
 
   it('migrates legacy numeric division counts into real units', () => {
