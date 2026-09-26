@@ -705,7 +705,7 @@ export function restoreGame(base: GameState): GameState | null {
         territories,
       ),
       battles:
-        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 10
+        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10
           ? validBattles(saved.battles, territories, divisionUnits)
           : [],
       divisionUnits,
