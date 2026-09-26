@@ -6,8 +6,8 @@ import {
   attackStanceLabels,
   buildDivision,
   buildFactory,
+  cancelDivisionOrder,
   cancelProduction,
-  captureTerritory,
   createInitialState,
   defenseUpgradeCost,
   difficultyLabels,
@@ -15,15 +15,19 @@ import {
   ECONOMY_INTERVAL,
   FACTORY_COST,
   FACTORY_INCOME,
+  divisionsAt,
   factionIncomePerCycle,
   factions,
+  issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
   ownerCounts,
+  playerDivisions,
   productionDuration,
+  renameCommander,
+  renameDivision,
   startGame,
   territoryMilitaryPower,
-  transferTroops,
   upgradeDefense,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
@@ -34,6 +38,7 @@ import type {
   AiFactionId,
   Difficulty,
   AttackStance,
+  DivisionUnit,
   FactionId,
   GameSpeed,
   GameState,
@@ -44,6 +49,8 @@ import type {
 const SOURCE_ID = 'admin-dongs'
 const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
+const DIVISION_ROUTE_SOURCE_ID = 'division-route'
+const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
 type MapMode = 'control' | 'supply' | 'industry'
 
 function territoryMapColor(
@@ -98,6 +105,7 @@ function App() {
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
   const previousBattleTerritories = useRef<Set<string>>(new Set())
+  const divisionMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -113,6 +121,7 @@ function App() {
   const [rulesOpen, setRulesOpen] = useState(true)
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
+  const [armyOpen, setArmyOpen] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
   useEffect(() => {
@@ -247,6 +256,26 @@ function App() {
           ],
         ],
         'line-opacity': 0.98,
+      },
+    })
+
+    map.addSource(DIVISION_ROUTE_SOURCE_ID, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_LAYER_ID,
+      type: 'line',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      paint: {
+        'line-color': '#f0d48a',
+        'line-width': 2.4,
+        'line-opacity': 0.9,
+        'line-dasharray': [2, 1.5],
       },
     })
 
