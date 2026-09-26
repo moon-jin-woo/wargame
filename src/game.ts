@@ -2626,6 +2626,7 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
       acc.logistics += territory.industry.logistics
       acc.infrastructure += territory.industry.infrastructure
       acc.research += territory.industry.research
+      acc.railway += territory.railway
       acc.supply += territory.supply
       return acc
     },
@@ -2635,6 +2636,7 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
       logistics: 0,
       infrastructure: 0,
       research: 0,
+      railway: 0,
       supply: 0,
     },
   )
@@ -2692,6 +2694,31 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
       (id) => state.territories[id]?.owner !== owner,
     ),
   )
+
+  const desiredRailway = Math.max(2, Math.ceil(owned.length * 0.75))
+  const railwayTarget = [...available]
+    .filter((territory) => territory.railway < MAX_RAILWAY)
+    .sort(
+      (a, b) =>
+        Number(frontlines.includes(b)) - Number(frontlines.includes(a)) ||
+        a.supply - b.supply ||
+        a.railway - b.railway ||
+        a.id.localeCompare(b.id),
+    )[0]
+
+  if (
+    railwayTarget &&
+    (averageSupply < 68 || totals.railway < desiredRailway) &&
+    state.funds[owner] >= productionCost('railway', railwayTarget)
+  ) {
+    return queueProductionForOwner(
+      state,
+      railwayTarget.id,
+      'railway',
+      owner,
+    )
+  }
+
   const divisionTarget = [...(frontlines.length > 0 ? frontlines : owned)]
     .filter((territory) => !hasProductionAt(state, owner, territory.id))
     .sort(
@@ -3241,19 +3268,39 @@ export function advanceTick(state: GameState): GameState {
       const infrastructureLevel = territory.industry.infrastructure
       const technologyLevel =
         state.technologies[owner]?.logisticsPlanning ?? 0
+      const railOperationsLevel =
+        state.technologies[owner]?.railOperations ?? 0
+      const supplyOptimizationLevel =
+        state.technologies[owner]?.supplyOptimization ?? 0
+      const railwayConnected =
+        territory.railway > 0 &&
+        territory.neighbors.some((neighborId) => {
+          const neighbor = territories[neighborId]
+          return (
+            neighbor?.owner === territory.owner &&
+            neighbor.railway > 0
+          )
+        })
+      const railwayBonus = railwayConnected
+        ? territory.railway * (0.34 + railOperationsLevel * 0.11)
+        : 0
 
       const supplyDelta = connected
         ? (0.65 +
             logisticsLevel * 0.72 +
             infrastructureLevel * 0.28 +
-            technologyLevel * 0.3) *
+            technologyLevel * 0.3 +
+            supplyOptimizationLevel * 0.24 +
+            railwayBonus) *
           terrainSupply[territory.terrain]
         : -Math.max(
-            0.75,
+            0.55,
             (3.2 -
               logisticsLevel * 0.42 -
               infrastructureLevel * 0.18 -
-              technologyLevel * 0.16) /
+              technologyLevel * 0.16 -
+              supplyOptimizationLevel * 0.2 -
+              (territory.railway > 0 ? railOperationsLevel * 0.1 : 0)) /
               Math.max(0.65, terrainSupply[territory.terrain]),
           )
 
