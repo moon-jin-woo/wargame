@@ -2176,3 +2176,340 @@ body {
     left: 8px;
   }
 }
+
+
+/* Division major update */
+.division-stack-marker {
+  --unit-color: #87919a;
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  width: 42px;
+  height: 34px;
+  place-items: center;
+  padding: 3px 5px;
+  border: 2px solid color-mix(in srgb, var(--unit-color) 78%, #ffffff 22%);
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, rgba(28, 31, 30, 0.96), rgba(12, 14, 14, 0.97));
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.48),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  color: #f0ecdf;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1;
+  transform-origin: center;
+  transition:
+    transform 100ms ease,
+    border-color 100ms ease,
+    box-shadow 100ms ease;
+}
+
+.division-stack-marker::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-top: 2px solid var(--unit-color);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.division-stack-marker strong {
+  margin-top: 3px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.division-stack-marker span {
+  color: #aaa79b;
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.division-stack-marker:hover,
+.division-stack-marker.selected {
+  z-index: 2;
+  transform: scale(1.1);
+}
+
+.division-stack-marker.selected {
+  border-color: #f0dfab;
+  box-shadow:
+    0 0 0 2px rgba(240, 223, 171, 0.18),
+    0 5px 14px rgba(0, 0, 0, 0.52);
+}
+
+.division-stack-marker.moving {
+  border-style: dashed;
+}
+
+.division-stack-marker.engaged {
+  border-color: #d66c56;
+  background:
+    linear-gradient(180deg, rgba(69, 34, 29, 0.97), rgba(22, 15, 14, 0.98));
+}
+
+.divisions-panel {
+  width: min(500px, calc(100% - 28px));
+}
+
+.division-command-strip {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  margin-bottom: 9px;
+  border: 1px solid rgba(186, 169, 126, 0.18);
+  border-radius: 4px;
+  background: rgba(11, 13, 13, 0.54);
+}
+
+.division-command-strip > span {
+  color: #a7a69d;
+  font-size: 9px;
+}
+
+.division-command-strip > div {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.division-command-strip button,
+.select-local-divisions {
+  padding: 7px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.22);
+  border-radius: 3px;
+  background: #1a1d1c;
+  color: #bbb9ae;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.division-command-strip button:hover:not(:disabled),
+.select-local-divisions:hover:not(:disabled) {
+  border-color: var(--ops-border-strong);
+  color: var(--ops-brass);
+}
+
+.division-command-strip button:disabled,
+.select-local-divisions:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.division-order-hint {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  margin-bottom: 9px;
+  border: 1px solid rgba(199, 170, 104, 0.38);
+  border-left: 3px solid var(--ops-brass);
+  border-radius: 3px;
+  background: rgba(90, 73, 39, 0.13);
+}
+
+.division-order-hint strong {
+  color: #dfd4b7;
+  font-size: 10px;
+}
+
+.division-order-hint span {
+  color: #a59f8f;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.division-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 9px;
+  border: 1px solid rgba(186, 169, 126, 0.2);
+  border-radius: 4px;
+  background: rgba(17, 19, 18, 0.7);
+}
+
+.division-editor-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.division-editor-title strong {
+  font-size: 10px;
+}
+
+.division-editor-title span {
+  overflow: hidden;
+  color: #868980;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-editor label {
+  display: grid;
+  gap: 4px;
+  color: #92948c;
+  font-size: 8px;
+}
+
+.division-editor input {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(186, 169, 126, 0.22);
+  border-radius: 3px;
+  outline: none;
+  background: #101211;
+  color: #e5e0d2;
+  font-size: 10px;
+}
+
+.division-editor input:focus {
+  border-color: var(--ops-border-strong);
+}
+
+.division-list {
+  display: grid;
+  gap: 6px;
+}
+
+.division-row {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(186, 169, 126, 0.16);
+  border-radius: 4px;
+  background: rgba(11, 13, 13, 0.5);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.division-row:hover {
+  border-color: rgba(186, 169, 126, 0.36);
+}
+
+.division-row.selected {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.11);
+}
+
+.division-row-head,
+.division-row-location {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.division-row-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.division-row-head strong {
+  overflow: hidden;
+  color: #e7e2d5;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-row-head span,
+.division-row-location span,
+.division-row-location small,
+.division-order-text {
+  color: #8d9088;
+  font-size: 8px;
+}
+
+.division-row-head em {
+  flex: 0 0 auto;
+  color: var(--ops-brass);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.division-readiness {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.division-readiness > div {
+  display: grid;
+  gap: 3px;
+}
+
+.division-readiness span {
+  color: #868980;
+  font-size: 7px;
+}
+
+.division-readiness i {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: #30322f;
+}
+
+.division-readiness b {
+  display: block;
+  height: 100%;
+  background: #718b6b;
+}
+
+.division-readiness > div:nth-child(2) b {
+  background: #90805a;
+}
+
+.select-local-divisions {
+  width: 100%;
+  margin: 10px 0 2px;
+}
+
+.neighbor-main.command-target {
+  border-color: rgba(199, 170, 104, 0.34);
+  background: rgba(199, 170, 104, 0.07);
+}
+
+.event-row.movement {
+  border-left: 2px solid #6f8d96;
+}
+
+@media (max-width: 620px) {
+  .divisions-panel {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+
+  .division-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .division-editor-title {
+    grid-column: 1;
+  }
+
+  .division-readiness {
+    grid-template-columns: 1fr;
+  }
+
+  .division-stack-marker {
+    width: 38px;
+    height: 31px;
+  }
+}
