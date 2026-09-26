@@ -4,6 +4,7 @@ import {
   assignDivisionToArmy,
   buildDivision,
   buildFactory,
+  buildIndustry,
   cancelProduction,
   createArmy,
   createInitialState,
@@ -12,6 +13,7 @@ import {
   FACTORY_COST,
   issueDivisionOrder,
   PRODUCTION_TICKS,
+  researchTechnology,
   setArmyObjective,
   setDivisionRole,
 } from './game'
@@ -33,6 +35,14 @@ function territory(
     troops: 0,
     supply: 90,
     factories: 0,
+    industry: {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    },
+    terrain: 'plains',
     divisions: 0,
     defense: 0,
     neighbors,
@@ -260,6 +270,65 @@ describe('division unit game loop', () => {
 
     expect(state.divisionUnits['p-1'].role).toBe('mobile')
     expect(state.divisionUnits['p-1'].entrenchment).toBe(0)
+  })
+
+
+  it('builds different industry types as separate regional capacity', () => {
+    let state = runningState()
+
+    state = buildIndustry(state, 'a', 'logistics')
+    expect(state.productionQueue[0]?.kind).toBe('logistics')
+
+    for (
+      let tick = 0;
+      tick < state.productionQueue[0].totalTicks;
+      tick += 1
+    ) {
+      state = advanceTick(state)
+    }
+
+    expect(state.territories.a.industry.logistics).toBe(1)
+    expect(state.territories.a.industry.civilian).toBe(0)
+  })
+
+  it('spends research points to advance an abstract technology level', () => {
+    let state = runningState()
+    state = {
+      ...state,
+      researchPoints: {
+        ...state.researchPoints,
+        player: 500,
+      },
+    }
+
+    const before = state.researchPoints.player
+    state = researchTechnology(state, 'player', 'logisticsPlanning')
+
+    expect(state.technologies.player.logisticsPlanning).toBe(1)
+    expect(state.researchPoints.player).toBeLessThan(before)
+  })
+
+  it('makes mountain movement slower than plains movement in the abstract map model', () => {
+    const plains = runningState()
+    const mountain = {
+      ...runningState(),
+      territories: {
+        ...runningState().territories,
+        b: {
+          ...runningState().territories.b,
+          terrain: 'mountain' as const,
+        },
+      },
+    }
+
+    const plainsOrdered = issueDivisionOrder(plains, 'p-1', 'b')
+    const mountainOrdered = issueDivisionOrder(mountain, 'p-1', 'b')
+
+    expect(
+      mountainOrdered.divisionUnits['p-1'].order?.totalTicks ?? 0,
+    ).toBeGreaterThan(
+      plainsOrdered.divisionUnits['p-1'].order?.totalTicks ?? 0,
+    )
   })
 
 })
