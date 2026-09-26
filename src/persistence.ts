@@ -15,6 +15,7 @@ import type {
   IndustryState,
   PlayableFactionId,
   ProductionOrder,
+  StrategyDoctrine,
   TechnologyId,
   TerrainType,
 } from './types'
@@ -36,10 +37,26 @@ const VALID_TERRAINS = new Set<TerrainType>([
 ])
 const TECHNOLOGIES: TechnologyId[] = [
   'industrialMethods',
+  'constructionEngineering',
+  'massProduction',
   'logisticsPlanning',
+  'railOperations',
+  'supplyOptimization',
   'commandNetwork',
+  'operationalPlanning',
+  'staffCoordination',
   'fieldEngineering',
+  'defensiveWorks',
+  'mobilityEngineering',
 ]
+
+const STRATEGIES = new Set<StrategyDoctrine>([
+  'balanced',
+  'maneuver',
+  'concentrated',
+  'defensive',
+  'logistics',
+])
 
 type SavedTerritory = {
   owner: FactionId
@@ -48,12 +65,13 @@ type SavedTerritory = {
   factories?: number
   industry?: Partial<IndustryState>
   terrain?: TerrainType
+  railway?: number
   divisions?: number
   defense?: number
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
   savedAt: number
   tick: number
   speed: GameSpeed
@@ -116,6 +134,7 @@ function validProductionOrders(
           candidate.kind === 'logistics' ||
           candidate.kind === 'infrastructure' ||
           candidate.kind === 'research' ||
+          candidate.kind === 'railway' ||
           candidate.kind === 'division' ||
           candidate.kind === 'defense') &&
         Number.isFinite(candidate.cost) &&
@@ -330,6 +349,10 @@ function validArmies(
         ? army.planStatus
         : 'idle'
 
+    const strategy = STRATEGIES.has(army.strategy as StrategyDoctrine)
+      ? (army.strategy as StrategyDoctrine)
+      : 'balanced'
+
     result[id] = {
       ...army,
       name: army.name.slice(0, 28),
@@ -337,6 +360,7 @@ function validArmies(
       divisionIds,
       objectiveId,
       planStatus,
+      strategy,
       preparation: clamp(Number(army.preparation) || 0, 0, 100),
       createdTick: Math.max(0, Math.floor(army.createdTick || 0)),
     }
@@ -397,6 +421,7 @@ export function saveGame(state: GameState): number {
         factories: territory.factories,
         industry: territory.industry,
         terrain: territory.terrain,
+        railway: territory.railway,
         divisions: territory.divisions,
         defense: territory.defense,
       },
@@ -404,7 +429,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 9,
+    schema: 10,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -461,7 +486,8 @@ export function restoreGame(base: GameState): GameState | null {
         saved.schema !== 6 &&
         saved.schema !== 7 &&
         saved.schema !== 8 &&
-        saved.schema !== 9) ||
+        saved.schema !== 9 &&
+        saved.schema !== 10) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -522,6 +548,9 @@ export function restoreGame(base: GameState): GameState | null {
       const terrain = VALID_TERRAINS.has(dynamic.terrain as TerrainType)
         ? (dynamic.terrain as TerrainType)
         : current.terrain
+      const railway = Number.isFinite(dynamic.railway)
+        ? clamp(Math.floor(Number(dynamic.railway)), 0, 3)
+        : current.railway ?? 0
       const defense = Number.isFinite(dynamic.defense)
         ? clamp(Math.floor(Number(dynamic.defense)), 0, 4)
         : current.defense
@@ -534,13 +563,14 @@ export function restoreGame(base: GameState): GameState | null {
         factories: industry.civilian,
         industry,
         terrain,
+        railway,
         divisions: 0,
         defense,
       }
     }
 
     const divisionUnits =
-      saved.schema === 7 || saved.schema === 8 || saved.schema === 9
+      saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10
         ? validDivisionUnits(saved.divisionUnits, territories)
         : migrateLegacyDivisionCounts(
             territories,
@@ -621,7 +651,7 @@ export function restoreGame(base: GameState): GameState | null {
           )?.id ?? null
 
     const armies =
-      saved.schema === 8 || saved.schema === 9
+      saved.schema === 8 || saved.schema === 9 || saved.schema === 10
         ? validArmies(saved.armies, territories, divisionUnits)
         : {}
 
@@ -675,7 +705,7 @@ export function restoreGame(base: GameState): GameState | null {
         territories,
       ),
       battles:
-        saved.schema === 7 || saved.schema === 8 || saved.schema === 9
+        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10
           ? validBattles(saved.battles, territories, divisionUnits)
           : [],
       divisionUnits,

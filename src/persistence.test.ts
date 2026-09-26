@@ -53,6 +53,7 @@ function territory(
       research: 0,
     },
     terrain: 'plains',
+    railway: 0,
     divisions: 0,
     defense: 0,
     neighbors: [],
@@ -124,6 +125,7 @@ describe('division save migration', () => {
           divisionIds: [unit.id],
           objectiveId: 'b',
           planStatus: 'planning' as const,
+          strategy: 'logistics' as const,
           preparation: 48,
           createdTick: 2,
         },
@@ -134,6 +136,7 @@ describe('division save migration', () => {
           ...base.territories.a,
           divisions: 1,
           terrain: 'mountain' as const,
+          railway: 2,
           industry: {
             civilian: 2,
             military: 1,
@@ -158,9 +161,11 @@ describe('division save migration', () => {
     expect(restored?.divisionUnits[unit.id].armyId).toBe('army-test')
     expect(restored?.armies['army-test'].commander).toBe('박준혁')
     expect(restored?.armies['army-test'].preparation).toBe(48)
+    expect(restored?.armies['army-test'].strategy).toBe('logistics')
     expect(restored?.selectedDivisionId).toBe(unit.id)
     expect(restored?.selectedArmyId).toBe('army-test')
     expect(restored?.territories.a.terrain).toBe('mountain')
+    expect(restored?.territories.a.railway).toBe(2)
     expect(restored?.territories.a.industry.logistics).toBe(2)
     expect(restored?.territories.a.industry.infrastructure).toBe(3)
     expect(restored?.researchPoints.player).toBe(123)

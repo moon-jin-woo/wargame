@@ -3,9 +3,11 @@ import * as maplibregl from 'maplibre-gl'
 import { loadLatestAdminDongs } from './adminData'
 import {
   advanceTick,
+  armiesForOwner,
   attackStanceLabels,
   buildDivision,
   buildIndustry,
+  buildRailway,
   cancelDivisionOrder,
   cancelProduction,
   createArmy,
@@ -28,6 +30,8 @@ import {
   issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
+  MAX_RAILWAY,
+  RAILWAY_COST,
   ownerCounts,
   playerArmies,
   playerDivisions,
@@ -38,13 +42,19 @@ import {
   renameCommander,
   renameDivision,
   setArmyObjective,
+  setArmyStrategy,
   setDivisionRole,
   assignDivisionToArmy,
   startGame,
   researchTechnology,
+  technologyAvailable,
+  technologyCategories,
   technologyCost,
+  technologyDefinitions,
+  TECHNOLOGY_IDS,
   technologyLabels,
-  TECHNOLOGY_MAX_LEVEL,
+  strategyDescriptions,
+  strategyLabels,
   terrainLabels,
   territoryMilitaryPower,
   upgradeDefense,
@@ -63,7 +73,10 @@ import type {
   GameSpeed,
   GameState,
   IndustryType,
+  PlayableFactionId,
   ProductionKind,
+  StrategyDoctrine,
+  TechnologyCategory,
   TechnologyId,
   TerritoryState,
 } from './types'
@@ -76,7 +89,9 @@ const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
-type MapMode = 'control' | 'supply' | 'industry' | 'terrain'
+const RAILWAY_SOURCE_ID = 'railway-network'
+const RAILWAY_LAYER_ID = 'railway-network-line'
+type MapMode = 'control' | 'supply' | 'industry' | 'terrain' | 'railway'
 
 const INDUSTRY_TYPES: IndustryType[] = [
   'civilian',
@@ -84,13 +99,6 @@ const INDUSTRY_TYPES: IndustryType[] = [
   'logistics',
   'infrastructure',
   'research',
-]
-
-const TECHNOLOGY_TYPES: TechnologyId[] = [
-  'industrialMethods',
-  'logisticsPlanning',
-  'commandNetwork',
-  'fieldEngineering',
 ]
 
 const TERRAIN_COLORS: Record<TerritoryState['terrain'], string> = {
@@ -119,6 +127,13 @@ function territoryMapColor(
 
   if (mode === 'terrain') {
     return TERRAIN_COLORS[territory.terrain]
+  }
+
+  if (mode === 'railway') {
+    if (territory.railway >= 3) return '#d7c182'
+    if (territory.railway === 2) return '#9e8c65'
+    if (territory.railway === 1) return '#655f4f'
+    return '#303737'
   }
 
   const industryLevel =
@@ -151,16 +166,7 @@ function industryDescription(kind: IndustryType): string {
 }
 
 function technologyDescription(technology: TechnologyId): string {
-  if (technology === 'industrialMethods') {
-    return '산업 수익과 건설 속도 향상'
-  }
-  if (technology === 'logisticsPlanning') {
-    return '보급 회복과 고립 완화'
-  }
-  if (technology === 'commandNetwork') {
-    return '군 작전 준비도 축적 가속'
-  }
-  return '방어·참호화 효율 향상'
+  return technologyDefinitions[technology].description
 }
 
 function divisionStatusLabel(division: DivisionUnit): string {
@@ -206,6 +212,7 @@ function App() {
   const [researchOpen, setResearchOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
+  const [hqFaction, setHqFaction] = useState<PlayableFactionId>('player')
   const [objectiveMode, setObjectiveMode] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
@@ -361,6 +368,35 @@ function App() {
         'line-width': 2.4,
         'line-opacity': 0.9,
         'line-dasharray': [2, 1.5],
+      },
+    })
+
+    map.addSource(RAILWAY_SOURCE_ID, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [],
+      },
+    })
+
+    map.addLayer({
+      id: RAILWAY_LAYER_ID,
+      type: 'line',
+      source: RAILWAY_SOURCE_ID,
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['get', 'level'],
+          1,
+          1.2,
+          2,
+          2.2,
+          3,
+          3.2,
+        ],
+        'line-opacity': 0.32,
       },
     })
 
@@ -531,7 +567,9 @@ function App() {
             ? `${mapMode}|${Math.round(territory.supply / 5)}|${visualColor}`
             : mapMode === 'terrain'
               ? `${mapMode}|${territory.terrain}|${visualColor}`
-              : `${mapMode}|${industryKey}|${visualColor}`
+              : mapMode === 'railway'
+                ? `${mapMode}|${territory.railway}|${visualColor}`
+                : `${mapMode}|${industryKey}|${visualColor}`
 
       if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
@@ -737,6 +775,20 @@ function App() {
     () => (game ? playerArmies(game) : []),
     [game?.armies],
   )
+  const hqArmyList = useMemo(
+    () => (game ? armiesForOwner(game, hqFaction) : []),
+    [game?.armies, hqFaction],
+  )
+
+  const hqDivisionList = useMemo(
+    () =>
+      game
+        ? Object.values(game.divisionUnits).filter(
+            (division) => division.owner === hqFaction,
+          )
+        : [],
+    [game?.divisionUnits, hqFaction],
+  )
 
   const playerDivisionList = useMemo(
     () => (game ? playerDivisions(game) : []),
@@ -924,7 +976,13 @@ function App() {
         }
       })
 
-      if (owner === 'player') {
+      if (
+        owner === 'player' ||
+        owner === 'red' ||
+        owner === 'blue' ||
+        owner === 'green'
+      ) {
+        setHqFaction(owner as PlayableFactionId)
         setArmyOpen(true)
       }
     }
@@ -946,6 +1004,63 @@ function App() {
       map.off('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
     }
   }, [layerReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady || !game) return
+
+    const source = map.getSource(
+      RAILWAY_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+
+    const features: Array<{
+      type: 'Feature'
+      properties: { level: number; color: string }
+      geometry: {
+        type: 'LineString'
+        coordinates: [number, number][]
+      }
+    }> = []
+
+    for (const territory of Object.values(game.territories)) {
+      if (territory.railway <= 0) continue
+
+      for (const neighborId of territory.neighbors) {
+        if (territory.id >= neighborId) continue
+        const neighbor = game.territories[neighborId]
+        if (!neighbor || neighbor.railway <= 0) continue
+
+        const level = Math.min(territory.railway, neighbor.railway)
+        const sameOwner = territory.owner === neighbor.owner
+        features.push({
+          type: 'Feature',
+          properties: {
+            level,
+            color:
+              sameOwner && territory.owner !== 'neutral'
+                ? ownerColor(territory.owner, game)
+                : '#8b8069',
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: [territory.centroid, neighbor.centroid],
+          },
+        })
+      }
+    }
+
+    source.setData({
+      type: 'FeatureCollection',
+      features,
+    })
+
+    map.setPaintProperty(
+      RAILWAY_LAYER_ID,
+      'line-opacity',
+      mapMode === 'railway' ? 0.95 : 0.3,
+    )
+  }, [game?.territories, game?.factionColors, layerReady, mapMode])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1580,11 +1695,11 @@ function App() {
         )}
 
         {game?.phase === 'running' && researchOpen && (
-          <section className="floating-panel research-panel">
+          <section className="floating-panel research-panel deep-tech-panel">
             <div className="floating-panel-head">
               <div>
                 <p className="eyebrow">국가 연구</p>
-                <h2>연구 / 체계 개선</h2>
+                <h2>기술 트리</h2>
               </div>
               <button onClick={() => setResearchOpen(false)}>닫기</button>
             </div>
@@ -1602,60 +1717,107 @@ function App() {
               </div>
             </div>
 
-            <div className="technology-list">
-              {TECHNOLOGY_TYPES.map((technology) => {
-                const level = game.technologies.player[technology]
-                const maxed = level >= TECHNOLOGY_MAX_LEVEL
-                const cost = maxed
-                  ? 0
-                  : technologyCost(technology, level)
+            <div className="technology-tree">
+              {(
+                ['industry', 'logistics', 'command', 'engineering'] as TechnologyCategory[]
+              ).map((category) => (
+                <section key={category} className="technology-branch">
+                  <header>
+                    <strong>{technologyCategories[category].label}</strong>
+                    <span>{technologyCategories[category].description}</span>
+                  </header>
+                  <div className="technology-list">
+                    {TECHNOLOGY_IDS.filter(
+                      (technology) =>
+                        technologyDefinitions[technology].category === category,
+                    ).map((technology) => {
+                      const definition = technologyDefinitions[technology]
+                      const level = game.technologies.player[technology] ?? 0
+                      const maxed = level >= definition.maxLevel
+                      const available = technologyAvailable(
+                        game,
+                        'player',
+                        technology,
+                      )
+                      const cost = maxed
+                        ? 0
+                        : technologyCost(technology, level)
+                      const prerequisites = Object.entries(
+                        definition.prerequisites,
+                      )
 
-                return (
-                  <div key={technology} className="technology-row">
-                    <div className="technology-row-head">
-                      <div>
-                        <strong>{technologyLabels[technology]}</strong>
-                        <span>{technologyDescription(technology)}</span>
-                      </div>
-                      <b>Lv.{level}</b>
-                    </div>
-                    <div className="technology-pips">
-                      {Array.from({ length: TECHNOLOGY_MAX_LEVEL }).map(
-                        (_, index) => (
-                          <i
-                            key={index}
-                            className={index < level ? 'active' : ''}
-                          />
-                        ),
-                      )}
-                    </div>
-                    <button
-                      disabled={
-                        maxed ||
-                        game.researchPoints.player < cost
-                      }
-                      onClick={() =>
-                        setGame((previous) =>
-                          previous
-                            ? researchTechnology(
-                                previous,
-                                'player',
-                                technology,
+                      return (
+                        <div
+                          key={technology}
+                          className={`technology-row ${available || maxed ? '' : 'locked'}`}
+                        >
+                          <div className="technology-row-head">
+                            <div>
+                              <strong>{technologyLabels[technology]}</strong>
+                              <span>{technologyDescription(technology)}</span>
+                            </div>
+                            <b>
+                              Lv.{level}/{definition.maxLevel}
+                            </b>
+                          </div>
+
+                          {prerequisites.length > 0 && (
+                            <small className="technology-prereq">
+                              선행:{' '}
+                              {prerequisites
+                                .map(
+                                  ([required, requiredLevel]) =>
+                                    `${technologyLabels[required as TechnologyId]} Lv.${requiredLevel}`,
+                                )
+                                .join(' · ')}
+                            </small>
+                          )}
+
+                          <div className="technology-pips">
+                            {Array.from({ length: definition.maxLevel }).map(
+                              (_, index) => (
+                                <i
+                                  key={index}
+                                  className={index < level ? 'active' : ''}
+                                />
+                              ),
+                            )}
+                          </div>
+                          <button
+                            disabled={
+                              maxed ||
+                              !available ||
+                              game.researchPoints.player < cost
+                            }
+                            onClick={() =>
+                              setGame((previous) =>
+                                previous
+                                  ? researchTechnology(
+                                      previous,
+                                      'player',
+                                      technology,
+                                    )
+                                  : previous,
                               )
-                            : previous,
-                        )
-                      }
-                    >
-                      {maxed ? '최대 단계' : `연구 ${cost}점`}
-                    </button>
+                            }
+                          >
+                            {maxed
+                              ? '완료'
+                              : !available
+                                ? '선행 연구 필요'
+                                : `연구 ${cost}점`}
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
-                )
-              })}
+                </section>
+              ))}
             </div>
           </section>
         )}
 
-        {game?.phase === 'running' && frontOpen && (
+                {game?.phase === 'running' && frontOpen && (
           <section className="floating-panel front-panel">
             <div className="floating-panel-head">
               <div>
@@ -1775,13 +1937,93 @@ function App() {
           <section className="floating-panel army-panel">
             <div className="floating-panel-head">
               <div>
-                <p className="eyebrow">사단 지휘부</p>
-                <h2>배치 사단 {playerDivisionList.length}개</h2>
+                <p className="eyebrow">통합 지휘부</p>
+                <h2>
+                  {ownerName(hqFaction, game)} · {hqDivisionList.length}개 사단
+                </h2>
               </div>
               <button onClick={() => setArmyOpen(false)}>닫기</button>
             </div>
 
-            <div className="army-hq-section">
+            <div className="hq-faction-tabs">
+              {(
+                [
+                  'player',
+                  ...(['red', 'blue', 'green'] as AiFactionId[]).slice(
+                    0,
+                    game.aiCount,
+                  ),
+                ] as PlayableFactionId[]
+              ).map((owner) => (
+                <button
+                  key={owner}
+                  className={hqFaction === owner ? 'active' : ''}
+                  onClick={() => setHqFaction(owner)}
+                >
+                  <i style={{ background: ownerColor(owner, game) }} />
+                  {ownerName(owner, game)}
+                  <b>{armiesForOwner(game, owner).length}</b>
+                </button>
+              ))}
+            </div>
+
+            {hqFaction !== 'player' && (
+              <div className="foreign-hq-overview">
+                <div className="foreign-hq-summary">
+                  <span>열람 중</span>
+                  <strong>{ownerName(hqFaction, game)}</strong>
+                  <small>
+                    군단 {hqArmyList.length} · 사단 {hqDivisionList.length}
+                  </small>
+                </div>
+
+                <div className="foreign-corps-list">
+                  {hqArmyList.length === 0 ? (
+                    <p className="panel-empty">
+                      아직 편성된 군단 정보가 없습니다.
+                    </p>
+                  ) : (
+                    hqArmyList.map((army) => (
+                      <article key={army.id} className="foreign-corps-card">
+                        <header>
+                          <div>
+                            <strong>{army.name}</strong>
+                            <span>{army.commander || '지휘관 미지정'}</span>
+                          </div>
+                          <b>{strategyLabels[army.strategy]}</b>
+                        </header>
+                        <div className="foreign-corps-meta">
+                          <span>사단 {army.divisionIds.length}</span>
+                          <span>
+                            {army.planStatus === 'executing'
+                              ? '작전 실행'
+                              : army.planStatus === 'planning'
+                                ? '계획 수립'
+                                : '대기'}
+                          </span>
+                          <span>준비 {Math.round(army.preparation)}%</span>
+                        </div>
+                        <div className="foreign-corps-objective">
+                          <span>작전 목표</span>
+                          <strong>
+                            {army.objectiveId
+                              ? game.territories[army.objectiveId]?.fullName ??
+                                '정보 없음'
+                              : '미지정'}
+                          </strong>
+                        </div>
+                        <div className="army-preparation-track">
+                          <i style={{ width: `${army.preparation}%` }} />
+                        </div>
+                        <small>{strategyDescriptions[army.strategy]}</small>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className={`army-hq-section ${hqFaction === 'player' ? '' : 'hq-player-hidden'}`}>
               <div className="army-hq-title">
                 <div>
                   <span>군 본부</span>
@@ -1859,6 +2101,41 @@ function App() {
                       />
                     </label>
                   </div>
+
+                  <label className="army-strategy-field">
+                    <span>군단 전략</span>
+                    <select
+                      value={selectedArmy.strategy}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? setArmyStrategy(
+                                previous,
+                                selectedArmy.id,
+                                event.target.value as StrategyDoctrine,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      {(
+                        [
+                          'balanced',
+                          'maneuver',
+                          'concentrated',
+                          'defensive',
+                          'logistics',
+                        ] as StrategyDoctrine[]
+                      ).map((strategy) => (
+                        <option key={strategy} value={strategy}>
+                          {strategyLabels[strategy]}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      {strategyDescriptions[selectedArmy.strategy]}
+                    </small>
+                  </label>
 
                   <div className="army-plan-card">
                     <div className="army-plan-meta">
@@ -1940,7 +2217,7 @@ function App() {
               )}
             </div>
 
-            {selectedDivision?.owner === 'player' && (
+            {hqFaction === 'player' && selectedDivision?.owner === 'player' && (
               <div className="division-inspector">
                 <div className="division-inspector-title">
                   <span className="division-counter-icon">◆</span>
@@ -2117,7 +2394,9 @@ function App() {
               </div>
             )}
 
-            <div className="division-list">
+            <div
+              className={`division-list ${hqFaction === 'player' ? '' : 'hq-player-hidden'}`}
+            >
               {playerDivisionList.map((division) => {
                 const territory = game.territories[division.locationId]
                 const selectedUnit = game.selectedDivisionId === division.id
@@ -2236,14 +2515,18 @@ function App() {
                 ? '보급 지도'
                 : mapMode === 'industry'
                   ? '산업 지도'
-                  : '근사 지형 지도'}
+                  : mapMode === 'terrain'
+                    ? '근사 지형 지도'
+                    : '철도망 지도'}
             </strong>
             <span>
               {mapMode === 'supply'
                 ? '초록 = 안정 · 황색 = 주의 · 적갈색 = 취약'
                 : mapMode === 'industry'
                   ? '밝을수록 산업·인프라 시설 총량이 많음'
-                  : '도시·평야·구릉·산악·산림·해안·도서의 게임용 근사 분류'}
+                  : mapMode === 'terrain'
+                    ? '도시·평야·구릉·산악·산림·해안·도서의 게임용 근사 분류'
+                    : '밝은 선로일수록 철도 단계가 높음 · 철도는 보급과 이동에 영향'}
             </span>
           </div>
         )}
@@ -2303,7 +2586,9 @@ function App() {
                     ? 'industry'
                     : mode === 'industry'
                       ? 'terrain'
-                      : 'control',
+                      : mode === 'terrain'
+                        ? 'railway'
+                        : 'control',
               )
             }
           >
@@ -2314,7 +2599,9 @@ function App() {
                 ? '보급'
                 : mapMode === 'industry'
                   ? '산업'
-                  : '지형'}
+                  : mapMode === 'terrain'
+                    ? '지형'
+                    : '철도'}
           </button>
           <button
             className={rulesOpen ? 'active' : ''}
@@ -2671,8 +2958,8 @@ function App() {
                 <strong>{terrainLabels[selected.terrain]}</strong>
               </div>
               <div>
-                <span>사단</span>
-                <strong>{selected.divisions}</strong>
+                <span>철도</span>
+                <strong>Lv.{selected.railway} / {MAX_RAILWAY}</strong>
               </div>
               <div>
                 <span>방어</span>
@@ -2786,6 +3073,29 @@ function App() {
                       </span>
                     </button>
                   ))}
+
+                  <button
+                    disabled={
+                      Boolean(selectedOrder) ||
+                      selected.railway >= MAX_RAILWAY ||
+                      game.funds.player <
+                        RAILWAY_COST + selected.railway * 55
+                    }
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous
+                          ? buildRailway(previous, selected.id)
+                          : previous,
+                      )
+                    }
+                  >
+                    <strong>철도 확장</strong>
+                    <span>
+                      {selected.railway >= MAX_RAILWAY
+                        ? '최대 단계'
+                        : `Lv.${selected.railway} → Lv.${selected.railway + 1} · 비용 ${RAILWAY_COST + selected.railway * 55} · 보급/이동 효율 증가`}
+                    </span>
+                  </button>
 
                   <button
                     disabled={Boolean(selectedOrder) || game.funds.player < DIVISION_COST}
