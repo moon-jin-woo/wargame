@@ -19,6 +19,7 @@ import {
   setArmyObjective,
   setArmyStrategy,
   setDivisionRole,
+  startGame,
   setNationalStrategy,
 } from './game'
 import type { DivisionUnit, GameState, TerritoryState } from './types'
