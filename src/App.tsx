@@ -2219,6 +2219,50 @@ function App() {
               지도에서 확대
             </button>
 
+            {selectedTerritoryDivisions.length > 0 && (
+              <div className="territory-unit-section">
+                <div className="neighbor-heading">
+                  <h3>주둔 사단</h3>
+                  <span>{selectedTerritoryDivisions.length}개</span>
+                </div>
+                <div className="territory-unit-list">
+                  {selectedTerritoryDivisions.map((division) => (
+                    <button
+                      key={division.id}
+                      className={
+                        selectedDivisionIds.includes(division.id)
+                          ? 'selected'
+                          : ''
+                      }
+                      onClick={(event) =>
+                        division.owner === 'player'
+                          ? focusDivision(
+                              division.id,
+                              event.shiftKey ||
+                                event.metaKey ||
+                                event.ctrlKey,
+                            )
+                          : undefined
+                      }
+                      disabled={division.owner !== 'player'}
+                    >
+                      <strong>{division.name || '이름 없는 사단'}</strong>
+                      <span>
+                        {division.commander || '지휘관 미지정'} ·{' '}
+                        {division.status === 'battle'
+                          ? '전투 중'
+                          : division.status === 'moving'
+                            ? '이동 중'
+                            : division.status === 'recovering'
+                              ? '재정비'
+                              : '대기'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="neighbor-heading">
               <h3>인접 행정동</h3>
               <span>{neighbors.length}개</span>
