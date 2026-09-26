@@ -47,6 +47,7 @@ export interface ProductionOrder {
 export interface DivisionOrder {
   type: DivisionOrderType
   targetId: string
+  path: string[]
   totalTicks: number
   remainingTicks: number
   issuedTick: number
