@@ -25,7 +25,6 @@ import type {
 const SOURCE_ID = 'admin-dongs'
 const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
-const LABEL_LAYER_ID = 'admin-dongs-label'
 
 function ownerName(owner: FactionId, game: GameState): string {
   if (owner === 'player') return game.playerName
@@ -52,6 +51,7 @@ function App() {
   const [loadingError, setLoadingError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [savedAt, setSavedAt] = useState<number | null>(() => getSavedAt())
+  const [territoryRenderCount, setTerritoryRenderCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -60,26 +60,13 @@ function App() {
       container: mapContainer.current,
       style: {
         version: 8,
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
-          },
-        },
+        sources: {},
         layers: [
           {
-            id: 'osm-base',
-            type: 'raster',
-            source: 'osm',
+            id: 'background',
+            type: 'background',
             paint: {
-              'raster-saturation': -0.72,
-              'raster-brightness-min': 0.08,
-              'raster-brightness-max': 0.58,
-              'raster-contrast': 0.12,
-              'raster-opacity': 0.78,
+              'background-color': '#17212b',
             },
           },
         ],
@@ -92,10 +79,18 @@ function App() {
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-left')
-    map.once('load', () => setMapLoaded(true))
+
+    const markStyleReady = () => setMapLoaded(true)
+    map.once('style.load', markStyleReady)
+
+    if (map.isStyleLoaded()) {
+      setMapLoaded(true)
+    }
+
     mapRef.current = map
 
     return () => {
+      map.off('style.load', markStyleReady)
       map.remove()
       mapRef.current = null
     }
@@ -124,6 +119,7 @@ function App() {
     const map = mapRef.current
     if (!map || !mapLoaded || !adminData || map.getSource(SOURCE_ID)) return
 
+    // Render territories first, with no dependency on external tiles or fonts.
     map.addSource(SOURCE_ID, {
       type: 'geojson',
       data: adminData.collection as never,
@@ -138,15 +134,15 @@ function App() {
         'fill-color': [
           'coalesce',
           ['feature-state', 'color'],
-          factions.neutral.color,
+          '#7f8b98',
         ],
         'fill-opacity': [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
-          0.82,
+          0.88,
           ['==', ['feature-state', 'owner'], 'neutral'],
-          0.36,
-          0.68,
+          0.5,
+          0.72,
         ],
       },
     })
@@ -161,63 +157,64 @@ function App() {
           ['boolean', ['feature-state', 'selected'], false],
           '#ffffff',
           ['boolean', ['feature-state', 'frontline'], false],
-          '#f2b35f',
-          '#8b99a8',
+          '#ffb65c',
+          '#d6dee7',
         ],
         'line-width': [
           'case',
           ['boolean', ['feature-state', 'selected'], false],
-          3.4,
+          3.6,
           ['boolean', ['feature-state', 'frontline'], false],
-          2,
+          2.2,
           [
             'interpolate',
             ['linear'],
             ['zoom'],
             5.4,
-            0.75,
+            0.9,
             8,
-            1.05,
+            1.2,
             11,
-            1.45,
+            1.6,
           ],
         ],
-        'line-opacity': 0.96,
+        'line-opacity': 0.98,
       },
     })
 
-    map.addLayer({
-      id: LABEL_LAYER_ID,
-      type: 'symbol',
-      source: SOURCE_ID,
-      minzoom: 8.7,
-      layout: {
-        'text-field': ['get', 'emdnm'],
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          8.7,
-          9,
-          11,
-          12,
-        ],
-        'text-font': ['Open Sans Regular'],
-        'text-allow-overlap': false,
-        'text-ignore-placement': false,
-      },
-      paint: {
-        'text-color': '#e8eef5',
-        'text-halo-color': '#111820',
-        'text-halo-width': 1.2,
-        'text-halo-blur': 0.4,
-      },
-    })
+    // Add the OSM basemap after territory layers exist, but insert it below them.
+    // If OSM is slow or unavailable, the territories still remain visible.
+    if (!map.getSource('osm')) {
+      map.addSource('osm', {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors',
+      })
+
+      map.addLayer(
+        {
+          id: 'osm-base',
+          type: 'raster',
+          source: 'osm',
+          paint: {
+            'raster-saturation': -0.72,
+            'raster-brightness-min': 0.08,
+            'raster-brightness-max': 0.58,
+            'raster-contrast': 0.12,
+            'raster-opacity': 0.72,
+          },
+        },
+        FILL_LAYER_ID,
+      )
+    }
 
     const clickHandler = (event: maplibregl.MapLayerMouseEvent) => {
       const id = event.features?.[0]?.properties?.gameId
       if (!id) return
-      setGame((previous) => (previous ? { ...previous, selectedId: String(id) } : previous))
+      setGame((previous) =>
+        previous ? { ...previous, selectedId: String(id) } : previous,
+      )
     }
 
     const enterHandler = () => {
@@ -228,23 +225,34 @@ function App() {
       map.getCanvas().style.cursor = ''
     }
 
+    const detectTerritories = () => {
+      if (!map.getLayer(FILL_LAYER_ID)) return
+
+      const visible = map.queryRenderedFeatures({
+        layers: [FILL_LAYER_ID],
+      })
+
+      if (visible.length > 0) {
+        setTerritoryRenderCount(visible.length)
+        map.off('render', detectTerritories)
+      }
+    }
+
     map.on('click', FILL_LAYER_ID, clickHandler)
     map.on('mouseenter', FILL_LAYER_ID, enterHandler)
     map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
+    map.on('render', detectTerritories)
 
     previousTerritories.current = {}
     previousFrontlines.current = {}
     previousSelected.current = null
-
-    // The source exists at this point. Do not block the whole UI waiting for
-    // MapLibre's sourcedata/isSourceLoaded event; that event can be missed
-    // during fast worker parsing and previously caused an infinite loader.
     setLayerReady(true)
 
     return () => {
       map.off('click', FILL_LAYER_ID, clickHandler)
       map.off('mouseenter', FILL_LAYER_ID, enterHandler)
       map.off('mouseleave', FILL_LAYER_ID, leaveHandler)
+      map.off('render', detectTerritories)
     }
   }, [adminData, mapLoaded])
 
@@ -518,6 +526,13 @@ function App() {
     <main className="app-shell">
       <section className="map-panel">
         <div ref={mapContainer} className="map" />
+        {game && (
+          <div className={`territory-health ${territoryRenderCount ? 'ok' : 'checking'}`}>
+            {territoryRenderCount
+              ? `영토 표시 확인 · 화면 내 ${territoryRenderCount.toLocaleString()}개`
+              : '영토 레이어 렌더링 확인 중'}
+          </div>
+        )}
 
         <div className="topbar">
           <div className="brand-block">
