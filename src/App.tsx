@@ -42,7 +42,7 @@ function App() {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const territoryCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const previousTerritories = useRef<Record<string, TerritoryState>>({})
+  const previousOwners = useRef<Record<string, string>>({})
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
 
@@ -54,6 +54,10 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [savedAt, setSavedAt] = useState<number | null>(() => getSavedAt())
   const [territoryRenderCount, setTerritoryRenderCount] = useState<number | null>(null)
+  const [canvasFallbackActive, setCanvasFallbackActive] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(true)
+  const [speedOpen, setSpeedOpen] = useState(false)
+  const [rulesOpen, setRulesOpen] = useState(true)
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -125,6 +129,9 @@ function App() {
       type: 'geojson',
       data: adminData.collection as never,
       promoteId: 'gameId',
+      maxzoom: 12,
+      buffer: 64,
+      tolerance: 0.75,
     })
 
     map.addLayer({
@@ -211,9 +218,7 @@ function App() {
     const clickHandler = (event: maplibregl.MapLayerMouseEvent) => {
       const id = event.features?.[0]?.properties?.gameId
       if (!id) return
-      setGame((previous) =>
-        previous ? { ...previous, selectedId: String(id) } : previous,
-      )
+      handleTerritoryCommand(String(id))
     }
 
     const enterHandler = () => {
@@ -242,7 +247,7 @@ function App() {
     map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
     map.on('render', detectTerritories)
 
-    previousTerritories.current = {}
+    previousOwners.current = {}
     previousFrontlines.current = {}
     previousSelected.current = null
     setLayerReady(true)
@@ -259,18 +264,39 @@ function App() {
     const map = mapRef.current
     if (!map || !layerReady || !game) return
 
+    const firstSync = Object.keys(previousOwners.current).length === 0
+    const affected = new Set<string>()
+
     for (const [id, territory] of Object.entries(game.territories)) {
-      if (previousTerritories.current[id] !== territory) {
+      const ownerKey = `${territory.owner}|${ownerColor(territory.owner, game)}`
+
+      if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
           { source: SOURCE_ID, id },
           {
             owner: territory.owner,
             color: ownerColor(territory.owner, game),
-            troops: territory.troops,
-            supply: territory.supply,
           },
         )
+
+        previousOwners.current[id] = ownerKey
+        affected.add(id)
+
+        for (const neighborId of territory.neighbors) {
+          affected.add(neighborId)
+        }
       }
+    }
+
+    if (firstSync) {
+      for (const id of Object.keys(game.territories)) {
+        affected.add(id)
+      }
+    }
+
+    for (const id of affected) {
+      const territory = game.territories[id]
+      if (!territory) continue
 
       const frontline =
         territory.owner !== 'neutral' &&
@@ -288,9 +314,7 @@ function App() {
         previousFrontlines.current[id] = frontline
       }
     }
-
-    previousTerritories.current = game.territories
-  }, [game?.territories, layerReady])
+  }, [game?.territories, game?.factionColors, layerReady])
 
   useEffect(() => {
     const map = mapRef.current
@@ -314,9 +338,27 @@ function App() {
   }, [game?.selectedId, layerReady])
 
   useEffect(() => {
+    if (!game || territoryRenderCount) {
+      setCanvasFallbackActive(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setCanvasFallbackActive(true)
+    }, 2500)
+
+    return () => window.clearTimeout(timer)
+  }, [Boolean(game), territoryRenderCount])
+
+  useEffect(() => {
     const map = mapRef.current
     const canvas = territoryCanvasRef.current
     if (!map || !canvas || !mapLoaded || !adminData || !game) return
+
+    if (!canvasFallbackActive) {
+      canvas.style.opacity = '0'
+      return
+    }
 
     let frame = 0
 
@@ -340,11 +382,7 @@ function App() {
       )
 
       if (!id) return
-      setGame((previous) =>
-        previous && previous.territories[id]
-          ? { ...previous, selectedId: id }
-          : previous,
-      )
+      handleTerritoryCommand(id)
     }
 
     map.on('movestart', hide)
@@ -360,7 +398,13 @@ function App() {
       map.off('resize', draw)
       map.off('click', fallbackClick)
     }
-  }, [adminData, game?.territories, game?.selectedId, mapLoaded])
+  }, [
+    adminData,
+    game?.territories,
+    game?.selectedId,
+    mapLoaded,
+    canvasFallbackActive,
+  ])
 
   useEffect(() => {
     if (!game || !game.running || game.phase !== 'running') return
@@ -405,7 +449,10 @@ function App() {
       .slice(0, 24)
   }, [game, searchQuery])
 
-  const counts = useMemo(() => (game ? ownerCounts(game) : null), [game])
+  const counts = useMemo(
+    () => (game ? ownerCounts(game) : null),
+    [game?.territories],
+  )
   const total = game ? Object.keys(game.territories).length : 0
 
   const nationalStats = useMemo(() => {
@@ -437,7 +484,7 @@ function App() {
         playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
       playerFrontlines,
     }
-  }, [game, counts, total])
+  }, [game?.territories, counts, total])
 
   const regionalStats = useMemo(() => {
     if (!game || !selected) return null
@@ -474,7 +521,29 @@ function App() {
         ...summarize(districtTerritories),
       },
     }
-  }, [game, selected])
+  }, [game?.territories, selected?.id])
+
+  const handleTerritoryCommand = (targetId: string) => {
+    setGame((previous) => {
+      if (!previous || !previous.territories[targetId]) return previous
+
+      const sourceId = previous.selectedId
+      const source = sourceId ? previous.territories[sourceId] : null
+      const target = previous.territories[targetId]
+
+      if (
+        previous.phase === 'running' &&
+        source &&
+        source.owner === 'player' &&
+        target.owner !== 'player' &&
+        source.neighbors.includes(targetId)
+      ) {
+        return captureTerritory(previous, source.id, targetId)
+      }
+
+      return { ...previous, selectedId: targetId }
+    })
+  }
 
   const focusSelected = () => {
     if (!selected || !mapRef.current) return
@@ -574,11 +643,9 @@ function App() {
     <main className="app-shell">
       <section className="map-panel">
         <div ref={mapContainer} className="map" />
-        {game && (
-          <div className={`territory-health ${territoryRenderCount ? 'ok' : 'checking'}`}>
-            {territoryRenderCount
-              ? `영토 표시 확인 · 화면 내 ${territoryRenderCount.toLocaleString()}개`
-              : '영토 레이어 렌더링 확인 중'}
+        {canvasFallbackActive && (
+          <div className="territory-health checking">
+            호환 렌더링 사용 중
           </div>
         )}
         <canvas
@@ -591,53 +658,106 @@ function App() {
           <div className="brand-block">
             <strong>WARGAME / KOREA</strong>
             <small>
-              {game ? `행정동 ${total.toLocaleString()}개 · 데이터 ${game.dataVersion}` : '데이터 준비 중'}
+              {game
+                ? `행정동 ${total.toLocaleString()}개 · Tick ${game.tick}`
+                : '데이터 준비 중'}
             </small>
           </div>
 
-          {game?.phase === 'running' && (
-            <>
-              <span className="tick">Tick {game.tick}</span>
+          <div className="map-toolbar">
+            <button
+              className={commandOpen ? 'active' : ''}
+              onClick={() => setCommandOpen((open) => !open)}
+            >
+              지휘
+            </button>
+            {game?.phase === 'running' && (
               <button
-                title="일시정지/재개 · Space"
+                className={speedOpen ? 'active' : ''}
+                onClick={() => setSpeedOpen((open) => !open)}
+              >
+                속도 ×{game.speed}
+              </button>
+            )}
+            <button
+              className={rulesOpen ? 'active' : ''}
+              onClick={() => setRulesOpen((open) => !open)}
+            >
+              규칙
+            </button>
+          </div>
+        </div>
+
+        {game?.phase === 'running' && speedOpen && (
+          <div className="speed-panel">
+            <div className="speed-panel-head">
+              <strong>시간 제어</strong>
+              <button onClick={() => setSpeedOpen(false)}>닫기</button>
+            </div>
+            <button
+              className={!game.running ? 'active' : ''}
+              onClick={() =>
+                setGame((previous) =>
+                  previous ? { ...previous, running: !previous.running } : previous,
+                )
+              }
+            >
+              {game.running ? '일시정지' : '재개'}
+            </button>
+            {([1, 2, 4] as const).map((speed) => (
+              <button
+                key={speed}
+                className={game.speed === speed ? 'active' : ''}
                 onClick={() =>
                   setGame((previous) =>
-                    previous ? { ...previous, running: !previous.running } : previous,
+                    previous ? { ...previous, speed } : previous,
                   )
                 }
               >
-                {game.running ? '일시정지' : '재개'}
+                ×{speed}
               </button>
-              {([1, 2, 4] as const).map((speed) => (
-                <button
-                  key={speed}
-                  title={`게임 속도 ×${speed} · 숫자 ${speed}`}
-                  className={game.speed === speed ? 'active' : ''}
-                  onClick={() =>
-                    setGame((previous) => (previous ? { ...previous, speed } : previous))
-                  }
-                >
-                  ×{speed}
-                </button>
-              ))}
-            </>
-          )}
+            ))}
+          </div>
+        )}
 
-          {game && (
-            <>
-              <button disabled={game.phase === 'setup'} onClick={handleSave}>
-                저장
-              </button>
-              <button disabled={!savedAt} onClick={handleLoad}>
-                불러오기
-              </button>
-            </>
-          )}
+        {rulesOpen && (
+          <section className="rules-panel">
+            <div className="rules-head">
+              <div>
+                <p className="eyebrow">게임 규칙</p>
+                <h2>지도에서 영토를 넓히면 됩니다.</h2>
+              </div>
+              <button onClick={() => setRulesOpen(false)}>닫기</button>
+            </div>
 
-          {game && game.phase !== 'setup' && (
-            <button onClick={handleNewGame}>새 게임</button>
-          )}
-        </div>
+            <div className="rules-steps">
+              <div>
+                <strong>1. 시작</strong>
+                <span>지휘 패널을 열고 시작할 행정동을 고른 뒤 게임을 시작합니다.</span>
+              </div>
+              <div>
+                <strong>2. 점령</strong>
+                <span>내 영토를 한 번 선택하고, 그 영토와 맞닿은 중립/적 영토를 지도에서 다시 클릭하면 점령을 시도합니다.</span>
+              </div>
+              <div>
+                <strong>3. 병력·보급</strong>
+                <span>병력이 많고 보급이 높을수록 점령에 유리합니다. 연결된 영토는 회복하고, 고립된 영토는 보급이 떨어집니다.</span>
+              </div>
+              <div>
+                <strong>4. 지원</strong>
+                <span>지휘 패널에서 인접한 아군 영토로 병력 일부를 지원 이동시킬 수 있습니다.</span>
+              </div>
+              <div>
+                <strong>5. 승리</strong>
+                <span>전국 행정동을 모두 점령하면 승리합니다. 내 영토가 0개가 되면 패배합니다.</span>
+              </div>
+            </div>
+
+            <p className="rules-tip">
+              기본 조작: 지도 클릭 = 선택/공격 · Space = 정지/재개 · 1/2/4 = 배속 · F = 선택 지역 확대
+            </p>
+          </section>
+        )}
 
         {game && counts && game.phase !== 'setup' && total > 0 && (
           <div className="situation-panel">
@@ -681,14 +801,32 @@ function App() {
         )}
       </section>
 
-      <aside className="sidebar">
-        <header>
-          <p className="eyebrow">전국 영역 통제</p>
-          <h1>행정동 RTS</h1>
-          <p className="muted">
-            실제 행정동 경계를 게임 영토로 사용합니다. 게임 수치는 현실의 군사 자료가 아닌 추상화된 값입니다.
-          </p>
+      {!commandOpen && (
+        <button className="command-tab" onClick={() => setCommandOpen(true)}>
+          지휘 열기
+        </button>
+      )}
+
+      <aside className={`sidebar ${commandOpen ? 'open' : 'closed'}`}>
+        <header className="command-header">
+          <div>
+            <p className="eyebrow">지휘 패널</p>
+            <h1>행정동 RTS</h1>
+          </div>
+          <button className="drawer-close" onClick={() => setCommandOpen(false)}>
+            닫기
+          </button>
         </header>
+
+        {game && (
+          <div className="command-actions">
+            <button disabled={game.phase === 'setup'} onClick={handleSave}>저장</button>
+            <button disabled={!savedAt} onClick={handleLoad}>불러오기</button>
+            {game.phase !== 'setup' && (
+              <button onClick={handleNewGame}>새 게임</button>
+            )}
+          </div>
+        )}
 
         {game && counts && (
           <div className="faction-grid">
@@ -914,7 +1052,11 @@ function App() {
               disabled={!selected}
               onClick={() => {
                 if (!selected) return
-                setGame((previous) => (previous ? startGame(previous, selected.id) : previous))
+                setGame((previous) =>
+                  previous ? startGame(previous, selected.id) : previous,
+                )
+                setCommandOpen(false)
+                setRulesOpen(false)
               }}
             >
               {selected ? `${selected.name}에서 시작` : '시작 지역 선택'}
