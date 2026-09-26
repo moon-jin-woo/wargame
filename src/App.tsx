@@ -659,6 +659,32 @@ function App() {
         event.stopPropagation()
         setGame((previous) => {
           if (!previous) return previous
+
+          const selectedUnit = previous.selectedDivisionId
+            ? previous.divisionUnits[previous.selectedDivisionId]
+            : null
+
+          if (
+            stack.owner !== 'player' &&
+            selectedUnit?.owner === 'player' &&
+            selectedUnit.status === 'idle' &&
+            selectedUnit.locationId !== stack.territoryId
+          ) {
+            const ordered = issueDivisionOrder(
+              previous,
+              selectedUnit.id,
+              stack.territoryId,
+            )
+
+            if (ordered !== previous) {
+              return {
+                ...ordered,
+                selectedId: stack.territoryId,
+                selectedDivisionId: selectedUnit.id,
+              }
+            }
+          }
+
           const playerUnit = stack.ids
             .map((id) => previous.divisionUnits[id])
             .find((division) => division?.owner === 'player')
@@ -673,7 +699,10 @@ function App() {
                 : null),
           }
         })
-        setArmyOpen(true)
+
+        if (stack.owner === 'player') {
+          setArmyOpen(true)
+        }
       })
 
       const marker = new maplibregl.Marker({
