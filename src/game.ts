@@ -1403,6 +1403,7 @@ export function startGame(state: GameState, startId: string): GameState {
       faction,
       claimedByOwner[faction] ?? [],
     )
+    next = maintainAiCorps(next, faction)
   }
 
   const firstPlayerDivision = playerDivisions(next)[0]?.id ?? null
@@ -2713,7 +2714,139 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
   return state
 }
 
+function aiCorpsStrategy(
+  state: GameState,
+  owner: AiFactionId,
+  index: number,
+): StrategyDoctrine {
+  const owned = Object.values(state.territories).filter(
+    (territory) => territory.owner === owner,
+  )
+  const averageSupply =
+    owned.length > 0
+      ? owned.reduce((sum, territory) => sum + territory.supply, 0) /
+        owned.length
+      : 100
+
+  if (averageSupply < 58) return 'logistics'
+  if (state.difficulty === 'hard' && index % 3 === 1) return 'concentrated'
+  if (index % 4 === 2) return 'defensive'
+  if (index % 3 === 0) return 'maneuver'
+  return 'balanced'
+}
+
+function maintainAiCorps(
+  state: GameState,
+  owner: AiFactionId,
+): GameState {
+  const divisions = Object.values(state.divisionUnits)
+    .filter((division) => division.owner === owner)
+    .sort(
+      (a, b) =>
+        a.locationId.localeCompare(b.locationId) ||
+        a.id.localeCompare(b.id),
+    )
+  if (divisions.length === 0) return state
+
+  const cap =
+    state.difficulty === 'easy' ? 2 : state.difficulty === 'hard' ? 8 : 6
+  const desired = Math.min(cap, Math.max(1, Math.ceil(divisions.length / 3)))
+  let next = state
+
+  while (armiesForOwner(next, owner).length < desired) {
+    const ordinal = armiesForOwner(next, owner).length + 1
+    const created = createArmyGroup(
+      next,
+      owner,
+      `${actorName(next, owner)} 제${ordinal}군단`,
+      aiCorpsStrategy(next, owner, ordinal),
+    )
+    next = created.state
+  }
+
+  const corps = armiesForOwner(next, owner)
+  if (corps.length === 0) return next
+
+  const hostileTargets = Object.values(next.territories)
+    .filter(
+      (territory) =>
+        territory.owner === owner &&
+        territory.neighbors.some(
+          (neighborId) => next.territories[neighborId]?.owner !== owner,
+        ),
+    )
+    .flatMap((territory) =>
+      territory.neighbors
+        .map((neighborId) => next.territories[neighborId])
+        .filter(
+          (target): target is TerritoryState =>
+            Boolean(target && target.owner !== owner),
+        ),
+    )
+    .filter(
+      (target, index, values) =>
+        values.findIndex((candidate) => candidate.id === target.id) === index,
+    )
+    .sort(
+      (a, b) =>
+        territoryMilitaryPower(a, next) -
+          territoryMilitaryPower(b, next) ||
+        a.id.localeCompare(b.id),
+    )
+
+  const armies = { ...next.armies }
+  const divisionUnits = { ...next.divisionUnits }
+
+  for (const army of corps) {
+    armies[army.id] = {
+      ...army,
+      divisionIds: [],
+    }
+  }
+
+  divisions.forEach((division, index) => {
+    const army = corps[index % corps.length]
+    armies[army.id] = {
+      ...armies[army.id],
+      divisionIds: [...armies[army.id].divisionIds, division.id],
+    }
+    divisionUnits[division.id] = {
+      ...division,
+      armyId: army.id,
+    }
+  })
+
+  corps.forEach((army, index) => {
+    const assigned = armies[army.id].divisionIds
+      .map((divisionId) => divisionUnits[divisionId])
+      .filter((division): division is DivisionUnit => Boolean(division))
+    const active = assigned.some((division) => division.status !== 'idle')
+    const target =
+      hostileTargets.length > 0
+        ? hostileTargets[index % hostileTargets.length]
+        : null
+
+    armies[army.id] = {
+      ...armies[army.id],
+      strategy: aiCorpsStrategy(next, owner, index + 1),
+      objectiveId: target?.id ?? null,
+      planStatus: target
+        ? active
+          ? 'executing'
+          : 'planning'
+        : 'idle',
+    }
+  })
+
+  return {
+    ...next,
+    armies,
+    divisionUnits,
+  }
+}
+
 function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
+  state = maintainAiCorps(state, owner)
   const candidates = Object.values(state.divisionUnits)
     .filter(
       (division) =>
