@@ -15,6 +15,8 @@ import type {
   PlayableFactionId,
   ProductionKind,
   ProductionOrder,
+  StrategyDoctrine,
+  TechnologyCategory,
   TechnologyId,
   TerrainType,
   TerritoryState,
@@ -46,6 +48,8 @@ export const FACTORY_INCOME = 12
 export const ECONOMY_INTERVAL = 5
 export const MAX_FACTORIES = 6
 export const MAX_DEFENSE = 4
+export const MAX_RAILWAY = 3
+export const RAILWAY_COST = 100
 
 export const industryLabels: Record<IndustryType, string> = {
   civilian: '민수산업',
@@ -80,6 +84,7 @@ export const PRODUCTION_TICKS: Record<ProductionKind, number> = {
   research: 40,
   division: 12,
   defense: 16,
+  railway: 18,
 }
 
 export const terrainLabels: Record<TerrainType, string> = {
@@ -132,26 +137,241 @@ const terrainSupply: Record<TerrainType, number> = {
   island: 0.76,
 }
 
-export const technologyLabels: Record<TechnologyId, string> = {
-  industrialMethods: '산업 공정',
-  logisticsPlanning: '물류 계획',
-  commandNetwork: '지휘 통신',
-  fieldEngineering: '야전 공학',
+export interface TechnologyDefinition {
+  id: TechnologyId
+  label: string
+  category: TechnologyCategory
+  description: string
+  maxLevel: number
+  baseCost: number
+  costGrowth: number
+  prerequisites: Partial<Record<TechnologyId, number>>
 }
 
+export const technologyDefinitions: Record<TechnologyId, TechnologyDefinition> = {
+  industrialMethods: {
+    id: 'industrialMethods',
+    label: '산업 공정',
+    category: 'industry',
+    description: '민수 산업 수익과 전반적인 생산 효율을 향상합니다.',
+    maxLevel: 3,
+    baseCost: 90,
+    costGrowth: 55,
+    prerequisites: {},
+  },
+  constructionEngineering: {
+    id: 'constructionEngineering',
+    label: '건설 공학',
+    category: 'industry',
+    description: '산업 시설·방어 공사·철도 건설 시간을 단축합니다.',
+    maxLevel: 3,
+    baseCost: 115,
+    costGrowth: 65,
+    prerequisites: { industrialMethods: 1 },
+  },
+  massProduction: {
+    id: 'massProduction',
+    label: '대량 생산',
+    category: 'industry',
+    description: '사단 편성 속도와 군사산업 기반 회복 효율을 높입니다.',
+    maxLevel: 2,
+    baseCost: 155,
+    costGrowth: 80,
+    prerequisites: { industrialMethods: 2, constructionEngineering: 1 },
+  },
+  logisticsPlanning: {
+    id: 'logisticsPlanning',
+    label: '물류 계획',
+    category: 'logistics',
+    description: '보급 회복과 고립 지역의 보급 손실을 완화합니다.',
+    maxLevel: 3,
+    baseCost: 85,
+    costGrowth: 55,
+    prerequisites: {},
+  },
+  railOperations: {
+    id: 'railOperations',
+    label: '철도 운영',
+    category: 'logistics',
+    description: '철도 단계가 이동과 보급에 주는 효과를 강화합니다.',
+    maxLevel: 3,
+    baseCost: 120,
+    costGrowth: 65,
+    prerequisites: { logisticsPlanning: 1 },
+  },
+  supplyOptimization: {
+    id: 'supplyOptimization',
+    label: '보급 최적화',
+    category: 'logistics',
+    description: '물류센터·철도·인프라의 복합 보급 효율을 높입니다.',
+    maxLevel: 2,
+    baseCost: 165,
+    costGrowth: 85,
+    prerequisites: { logisticsPlanning: 2, railOperations: 1 },
+  },
+  commandNetwork: {
+    id: 'commandNetwork',
+    label: '지휘 통신',
+    category: 'command',
+    description: '군단의 작전 준비도 축적 속도를 향상합니다.',
+    maxLevel: 3,
+    baseCost: 95,
+    costGrowth: 60,
+    prerequisites: {},
+  },
+  operationalPlanning: {
+    id: 'operationalPlanning',
+    label: '작전 계획',
+    category: 'command',
+    description: '준비된 군단의 추상 공세 효율을 강화합니다.',
+    maxLevel: 3,
+    baseCost: 125,
+    costGrowth: 70,
+    prerequisites: { commandNetwork: 1 },
+  },
+  staffCoordination: {
+    id: 'staffCoordination',
+    label: '참모 조정',
+    category: 'command',
+    description: '군단 지휘관 보정과 다수 사단 운용 효율을 높입니다.',
+    maxLevel: 2,
+    baseCost: 170,
+    costGrowth: 90,
+    prerequisites: { commandNetwork: 2, operationalPlanning: 1 },
+  },
+  fieldEngineering: {
+    id: 'fieldEngineering',
+    label: '야전 공학',
+    category: 'engineering',
+    description: '참호화 축적과 지역 방어 준비를 향상합니다.',
+    maxLevel: 3,
+    baseCost: 80,
+    costGrowth: 55,
+    prerequisites: {},
+  },
+  defensiveWorks: {
+    id: 'defensiveWorks',
+    label: '방어 시설 공학',
+    category: 'engineering',
+    description: '방어 시설과 수비 사단의 추상 방어 보정을 강화합니다.',
+    maxLevel: 3,
+    baseCost: 115,
+    costGrowth: 65,
+    prerequisites: { fieldEngineering: 1 },
+  },
+  mobilityEngineering: {
+    id: 'mobilityEngineering',
+    label: '기동 공학',
+    category: 'engineering',
+    description: '기동 사단과 인프라·철도 이동 효율을 개선합니다.',
+    maxLevel: 2,
+    baseCost: 160,
+    costGrowth: 85,
+    prerequisites: { fieldEngineering: 1, railOperations: 1 },
+  },
+}
+
+export const technologyLabels: Record<TechnologyId, string> = Object.fromEntries(
+  Object.values(technologyDefinitions).map((definition) => [
+    definition.id,
+    definition.label,
+  ]),
+) as Record<TechnologyId, string>
+
 export const TECHNOLOGY_MAX_LEVEL = 3
+
+export const technologyCategories: Record<
+  TechnologyCategory,
+  { label: string; description: string }
+> = {
+  industry: {
+    label: '산업',
+    description: '건설·수익·생산 체계를 확장합니다.',
+  },
+  logistics: {
+    label: '물류',
+    description: '보급망과 철도 효율을 강화합니다.',
+  },
+  command: {
+    label: '지휘',
+    description: '군단 계획과 참모 체계를 개선합니다.',
+  },
+  engineering: {
+    label: '공병',
+    description: '방어·참호·기동 기반을 강화합니다.',
+  },
+}
 
 export function technologyCost(
   technology: TechnologyId,
   level: number,
 ): number {
-  const base: Record<TechnologyId, number> = {
-    industrialMethods: 90,
-    logisticsPlanning: 85,
-    commandNetwork: 95,
-    fieldEngineering: 80,
-  }
-  return base[technology] + level * 55
+  const definition = technologyDefinitions[technology]
+  return definition.baseCost + level * definition.costGrowth
+}
+
+export function technologyAvailable(
+  state: GameState,
+  owner: PlayableFactionId,
+  technology: TechnologyId,
+): boolean {
+  const definition = technologyDefinitions[technology]
+  const current = state.technologies[owner][technology] ?? 0
+  if (current >= definition.maxLevel) return false
+
+  return Object.entries(definition.prerequisites).every(
+    ([requiredId, requiredLevel]) =>
+      (state.technologies[owner][requiredId as TechnologyId] ?? 0) >=
+      Number(requiredLevel ?? 0),
+  )
+}
+
+export const strategyLabels: Record<StrategyDoctrine, string> = {
+  balanced: '균형 전략',
+  maneuver: '기동 전략',
+  concentrated: '집중 전략',
+  defensive: '방어 전략',
+  logistics: '보급 전략',
+}
+
+export const strategyDescriptions: Record<StrategyDoctrine, string> = {
+  balanced: '공격·방어·준비도의 균형형 운용입니다.',
+  maneuver: '이동과 목표 전환이 빠르지만 방어 보정이 낮습니다.',
+  concentrated: '준비된 공세 효율을 높이는 대신 조직력 소모가 큽니다.',
+  defensive: '방어·참호 효율이 높지만 공세 효율이 낮습니다.',
+  logistics: '보급 상태와 철도 효과를 우선하는 안정형 전략입니다.',
+}
+
+const strategyAttack: Record<StrategyDoctrine, number> = {
+  balanced: 1,
+  maneuver: 1.02,
+  concentrated: 1.08,
+  defensive: 0.94,
+  logistics: 1,
+}
+
+const strategyDefense: Record<StrategyDoctrine, number> = {
+  balanced: 1,
+  maneuver: 0.95,
+  concentrated: 0.98,
+  defensive: 1.1,
+  logistics: 1.02,
+}
+
+const strategyMove: Record<StrategyDoctrine, number> = {
+  balanced: 1,
+  maneuver: 0.9,
+  concentrated: 1.05,
+  defensive: 1.08,
+  logistics: 0.96,
+}
+
+const strategyPreparation: Record<StrategyDoctrine, number> = {
+  balanced: 1,
+  maneuver: 0.95,
+  concentrated: 1.08,
+  defensive: 1.04,
+  logistics: 1.02,
 }
 
 const STARTING_FUNDS = 320
