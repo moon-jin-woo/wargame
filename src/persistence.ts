@@ -4,6 +4,9 @@ import type {
   AttackStance,
   BattleState,
   Difficulty,
+  DivisionOrder,
+  DivisionState,
+  DivisionStatus,
   FactionId,
   GameEvent,
   GamePhase,
@@ -15,9 +18,17 @@ import type {
 
 const SAVE_KEY = 'wargame-save-v1'
 const VALID_OWNERS = new Set<FactionId>(['player', 'red', 'blue', 'green', 'neutral'])
+const VALID_PLAYABLE = new Set<PlayableFactionId>(['player', 'red', 'blue', 'green'])
 const VALID_PHASES = new Set<GamePhase>(['setup', 'running', 'victory', 'defeat'])
 const VALID_DIFFICULTIES = new Set<Difficulty>(['easy', 'normal', 'hard'])
 const VALID_STANCES = new Set<AttackStance>(['cautious', 'balanced', 'aggressive'])
+const VALID_DIVISION_STATUS = new Set<DivisionStatus>([
+  'idle',
+  'moving',
+  'attacking',
+  'defending',
+  'retreating',
+])
 
 type SavedTerritory = {
   owner: FactionId
@@ -29,7 +40,7 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4 | 5 | 6
+  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7
   savedAt: number
   tick: number
   speed: GameSpeed
@@ -46,6 +57,9 @@ type SavedGame = {
   autoOffensive?: boolean
   events?: GameEvent[]
   productionQueue?: ProductionOrder[]
+  divisions?: Record<string, DivisionState>
+  divisionOrders?: DivisionOrder[]
+  divisionSerials?: Record<PlayableFactionId, number>
   battles?: BattleState[]
   territories: Record<string, SavedTerritory>
 }
@@ -74,10 +88,7 @@ function validProductionOrders(
       const candidate = order as ProductionOrder
       return (
         typeof candidate.id === 'string' &&
-        (candidate.owner === 'player' ||
-          candidate.owner === 'red' ||
-          candidate.owner === 'blue' ||
-          candidate.owner === 'green') &&
+        VALID_PLAYABLE.has(candidate.owner) &&
         typeof candidate.territoryId === 'string' &&
         Boolean(territories[candidate.territoryId]) &&
         (candidate.kind === 'factory' ||
@@ -95,45 +106,185 @@ function validProductionOrders(
       remainingTicks: Math.max(1, Math.floor(order.remainingTicks)),
       queuedTick: Math.max(0, Math.floor(order.queuedTick || 0)),
     }))
+    .slice(0, 120)
+}
+
+function legacyCommander(serial: number): string {
+  const surnames = ['강', '김', '박', '서', '윤', '이', '정', '최']
+  const names = ['도현', '민재', '서준', '유진', '지훈', '태윤', '현우', '성민']
+  return `${surnames[serial % surnames.length]}${names[(serial * 3) % names.length]}`
+}
+
+function materializeLegacyDivisions(
+  territories: GameState['territories'],
+): {
+  divisions: Record<string, DivisionState>
+  serials: Record<PlayableFactionId, number>
+} {
+  const divisions: Record<string, DivisionState> = {}
+  const serials: Record<PlayableFactionId, number> = {
+    player: 0,
+    red: 0,
+    blue: 0,
+    green: 0,
+  }
+
+  for (const territory of Object.values(territories)) {
+    if (territory.owner === 'neutral') continue
+    const owner = territory.owner as PlayableFactionId
+    const count = Math.max(0, Math.floor(territory.divisions))
+
+    for (let index = 0; index < count; index += 1) {
+      serials[owner] += 1
+      const serial = serials[owner]
+      const id = `legacy-${owner}-division-${serial}-${territory.id}`
+      divisions[id] = {
+        id,
+        owner,
+        name: `제${serial}보병사단`,
+        commanderName: legacyCommander(serial),
+        locationId: territory.id,
+        strength: 100,
+        organization: 85,
+        experience: 0,
+        status: 'idle',
+        orderId: null,
+        battleId: null,
+      }
+    }
+  }
+
+  return { divisions, serials }
+}
+
+function validDivisions(
+  raw: unknown,
+  territories: GameState['territories'],
+): Record<string, DivisionState> {
+  if (!raw || typeof raw !== 'object') return {}
+
+  const result: Record<string, DivisionState> = {}
+
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue
+    const division = value as DivisionState
+
+    if (
+      typeof division.id !== 'string' ||
+      division.id !== id ||
+      !VALID_PLAYABLE.has(division.owner) ||
+      typeof division.locationId !== 'string' ||
+      !territories[division.locationId] ||
+      typeof division.name !== 'string' ||
+      typeof division.commanderName !== 'string'
+    ) {
+      continue
+    }
+
+    result[id] = {
+      ...division,
+      strength: clamp(Number(division.strength) || 0, 0, 100),
+      organization: clamp(Number(division.organization) || 0, 0, 100),
+      experience: clamp(Number(division.experience) || 0, 0, 5),
+      status: VALID_DIVISION_STATUS.has(division.status)
+        ? division.status
+        : 'idle',
+      orderId:
+        typeof division.orderId === 'string' ? division.orderId : null,
+      battleId:
+        typeof division.battleId === 'string' ? division.battleId : null,
+    }
+  }
+
+  return result
+}
+
+function validDivisionOrders(
+  raw: unknown,
+  divisions: Record<string, DivisionState>,
+  territories: GameState['territories'],
+): DivisionOrder[] {
+  if (!Array.isArray(raw)) return []
+
+  return raw
+    .filter((value): value is DivisionOrder => {
+      if (!value || typeof value !== 'object') return false
+      const order = value as DivisionOrder
+      return (
+        typeof order.id === 'string' &&
+        VALID_PLAYABLE.has(order.owner) &&
+        Array.isArray(order.divisionIds) &&
+        order.divisionIds.length > 0 &&
+        order.divisionIds.every((id) => Boolean(divisions[id])) &&
+        typeof order.fromId === 'string' &&
+        typeof order.targetId === 'string' &&
+        Boolean(territories[order.fromId]) &&
+        Boolean(territories[order.targetId]) &&
+        Array.isArray(order.path) &&
+        order.path.every((id) => Boolean(territories[id])) &&
+        (order.kind === 'move' || order.kind === 'attack')
+      )
+    })
+    .map((order) => ({
+      ...order,
+      stepIndex: clamp(Math.floor(order.stepIndex || 0), 0, Math.max(0, order.path.length - 1)),
+      remainingTicks: Math.max(1, Math.floor(order.remainingTicks || 1)),
+      createdTick: Math.max(0, Math.floor(order.createdTick || 0)),
+    }))
     .slice(0, 80)
 }
 
 function validBattles(
-  battles: unknown,
+  raw: unknown,
+  divisions: Record<string, DivisionState>,
   territories: GameState['territories'],
 ): BattleState[] {
-  if (!Array.isArray(battles)) return []
+  if (!Array.isArray(raw)) return []
 
-  return battles
-    .filter((battle): battle is BattleState => {
-      if (!battle || typeof battle !== 'object') return false
-      const candidate = battle as BattleState
+  return raw
+    .filter((value): value is BattleState => {
+      if (!value || typeof value !== 'object') return false
+      const battle = value as BattleState
       return (
-        typeof candidate.id === 'string' &&
-        (candidate.attacker === 'player' ||
-          candidate.attacker === 'red' ||
-          candidate.attacker === 'blue' ||
-          candidate.attacker === 'green') &&
-        VALID_OWNERS.has(candidate.defender) &&
-        typeof candidate.fromId === 'string' &&
-        typeof candidate.toId === 'string' &&
-        Boolean(territories[candidate.fromId]) &&
-        Boolean(territories[candidate.toId]) &&
-        Number.isFinite(candidate.committedDivisions) &&
-        Number.isFinite(candidate.progress) &&
-        VALID_STANCES.has(candidate.stance)
+        typeof battle.id === 'string' &&
+        VALID_PLAYABLE.has(battle.attacker) &&
+        VALID_OWNERS.has(battle.defender) &&
+        Boolean(territories[battle.fromId]) &&
+        Boolean(territories[battle.toId]) &&
+        Array.isArray(battle.divisionIds) &&
+        battle.divisionIds.every((id) => Boolean(divisions[id])) &&
+        Array.isArray(battle.defenderDivisionIds) &&
+        battle.defenderDivisionIds.every((id) => Boolean(divisions[id])) &&
+        VALID_STANCES.has(battle.stance)
       )
     })
     .map((battle) => ({
       ...battle,
-      committedDivisions: Math.max(
-        1,
-        Math.floor(battle.committedDivisions),
-      ),
-      progress: clamp(Number(battle.progress), -99, 99),
+      committedDivisions: battle.divisionIds.length,
+      progress: clamp(Number(battle.progress) || 0, -99, 99),
       startedTick: Math.max(0, Math.floor(battle.startedTick || 0)),
     }))
-    .slice(0, 20)
+    .slice(0, 30)
+}
+
+function recountTerritories(
+  territories: GameState['territories'],
+  divisions: Record<string, DivisionState>,
+): GameState['territories'] {
+  const counts: Record<string, number> = {}
+  for (const division of Object.values(divisions)) {
+    counts[division.locationId] = (counts[division.locationId] ?? 0) + 1
+  }
+
+  return Object.fromEntries(
+    Object.entries(territories).map(([id, territory]) => [
+      id,
+      {
+        ...territory,
+        divisions: counts[id] ?? 0,
+      },
+    ]),
+  )
 }
 
 export function saveGame(state: GameState): number {
@@ -153,7 +304,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 6,
+    schema: 7,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -168,8 +319,11 @@ export function saveGame(state: GameState): number {
     funds: state.funds,
     attackStance: state.attackStance,
     autoOffensive: state.autoOffensive,
-    events: state.events.slice(0, 60),
+    events: state.events.slice(0, 80),
     productionQueue: state.productionQueue,
+    divisions: state.divisions,
+    divisionOrders: state.divisionOrders,
+    divisionSerials: state.divisionSerials,
     battles: state.battles,
     territories,
   }
@@ -196,19 +350,16 @@ export function restoreGame(base: GameState): GameState | null {
 
     const saved = JSON.parse(raw) as Partial<SavedGame>
     if (
-      (saved.schema !== 1 &&
-        saved.schema !== 2 &&
-        saved.schema !== 3 &&
-        saved.schema !== 4 &&
-        saved.schema !== 5 &&
-        saved.schema !== 6) ||
+      !saved.schema ||
+      saved.schema < 1 ||
+      saved.schema > 7 ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
       return null
     }
 
-    const territories = { ...base.territories }
+    let territories = { ...base.territories }
 
     for (const [id, dynamic] of Object.entries(saved.territories)) {
       const current = territories[id]
@@ -228,7 +379,7 @@ export function restoreGame(base: GameState): GameState | null {
         : current.factories
       const divisions = Number.isFinite(dynamic.divisions)
         ? clamp(Math.floor(Number(dynamic.divisions)), 0, 99)
-        : Math.max(0, Math.round(troops / 35))
+        : current.divisions
       const defense = Number.isFinite(dynamic.defense)
         ? clamp(Math.floor(Number(dynamic.defense)), 0, 4)
         : current.defense
@@ -244,15 +395,33 @@ export function restoreGame(base: GameState): GameState | null {
       }
     }
 
+    let divisions: Record<string, DivisionState>
+    let serials: Record<PlayableFactionId, number>
+
+    if (saved.schema === 7) {
+      divisions = validDivisions(saved.divisions, territories)
+      const savedSerials = saved.divisionSerials
+      serials = {
+        player: Math.max(0, Math.floor(savedSerials?.player ?? 0)),
+        red: Math.max(0, Math.floor(savedSerials?.red ?? 0)),
+        blue: Math.max(0, Math.floor(savedSerials?.blue ?? 0)),
+        green: Math.max(0, Math.floor(savedSerials?.green ?? 0)),
+      }
+    } else {
+      const migrated = materializeLegacyDivisions(territories)
+      divisions = migrated.divisions
+      serials = migrated.serials
+    }
+
+    territories = recountTerritories(territories, divisions)
+
     const phase = VALID_PHASES.has(saved.phase as GamePhase)
       ? (saved.phase as GamePhase)
       : base.phase
-
     const selectedId =
       typeof saved.selectedId === 'string' && territories[saved.selectedId]
         ? saved.selectedId
         : base.selectedId
-
     const difficulty = VALID_DIFFICULTIES.has(saved.difficulty as Difficulty)
       ? (saved.difficulty as Difficulty)
       : base.difficulty
@@ -260,9 +429,7 @@ export function restoreGame(base: GameState): GameState | null {
     const aiNames = { ...base.aiNames }
     for (const id of ['red', 'blue', 'green'] as AiFactionId[]) {
       const value = saved.aiNames?.[id]
-      if (typeof value === 'string') {
-        aiNames[id] = value.slice(0, 24)
-      }
+      if (typeof value === 'string') aiNames[id] = value.slice(0, 24)
     }
 
     const factionColors = { ...base.factionColors }
@@ -284,6 +451,19 @@ export function restoreGame(base: GameState): GameState | null {
     const attackStance = VALID_STANCES.has(saved.attackStance as AttackStance)
       ? (saved.attackStance as AttackStance)
       : base.attackStance
+
+    const productionQueue = validProductionOrders(
+      saved.productionQueue,
+      territories,
+    )
+    const divisionOrders =
+      saved.schema === 7
+        ? validDivisionOrders(saved.divisionOrders, divisions, territories)
+        : []
+    const battles =
+      saved.schema === 7
+        ? validBattles(saved.battles, divisions, territories)
+        : []
 
     return {
       ...base,
@@ -310,13 +490,13 @@ export function restoreGame(base: GameState): GameState | null {
           ? saved.autoOffensive
           : base.autoOffensive,
       events: Array.isArray(saved.events)
-        ? saved.events.slice(0, 60)
+        ? saved.events.slice(0, 80)
         : base.events,
-      productionQueue: validProductionOrders(
-        saved.productionQueue,
-        territories,
-      ),
-      battles: validBattles(saved.battles, territories),
+      productionQueue,
+      divisions,
+      divisionOrders,
+      divisionSerials: serials,
+      battles,
       territories,
     }
   } catch {
