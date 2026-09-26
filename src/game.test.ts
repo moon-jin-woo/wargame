@@ -140,14 +140,32 @@ describe('individual division game loop', () => {
     expect(state.divisions[id].status).toBe('idle')
   })
 
-  it('enters battle only after the division reaches a hostile border', () => {
+  it('enters battle only after the division reaches a defended hostile border', () => {
     let state = runningState()
     const id = 'div:player:test:1'
+    const enemyId = 'div:red:test:1'
+
+    state = {
+      ...state,
+      territories: {
+        ...state.territories,
+        c: {
+          ...state.territories.c,
+          owner: 'red',
+          divisions: 1,
+          defense: 1,
+        },
+      },
+      divisions: {
+        ...state.divisions,
+        [enemyId]: division(enemyId, 'red', 'c'),
+      },
+    }
 
     state = issueDivisionMoveOrders(state, [id], 'c')
 
     expect(state.battles).toHaveLength(0)
-    expect(state.territories.c.owner).toBe('neutral')
+    expect(state.territories.c.owner).toBe('red')
 
     for (let tick = 0; tick < DIVISION_MOVE_TICKS; tick += 1) {
       state = advanceTick(state)
@@ -161,7 +179,7 @@ describe('individual division game loop', () => {
     }
 
     expect(state.battles).toHaveLength(1)
-    expect(state.territories.c.owner).toBe('neutral')
+    expect(state.territories.c.owner).toBe('red')
     expect(state.divisions[id].status).toBe('battle')
   })
 
