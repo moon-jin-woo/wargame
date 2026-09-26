@@ -345,7 +345,7 @@ function App() {
     }, 2500)
 
     return () => window.clearTimeout(timer)
-  }, [game, territoryRenderCount])
+  }, [Boolean(game), territoryRenderCount])
 
   useEffect(() => {
     const map = mapRef.current
@@ -637,11 +637,9 @@ function App() {
     <main className="app-shell">
       <section className="map-panel">
         <div ref={mapContainer} className="map" />
-        {game && (
-          <div className={`territory-health ${territoryRenderCount ? 'ok' : 'checking'}`}>
-            {territoryRenderCount
-              ? `영토 표시 확인 · 화면 내 ${territoryRenderCount.toLocaleString()}개`
-              : '영토 레이어 렌더링 확인 중'}
+        {canvasFallbackActive && (
+          <div className="territory-health checking">
+            호환 렌더링 사용 중
           </div>
         )}
         <canvas
@@ -654,53 +652,106 @@ function App() {
           <div className="brand-block">
             <strong>WARGAME / KOREA</strong>
             <small>
-              {game ? `행정동 ${total.toLocaleString()}개 · 데이터 ${game.dataVersion}` : '데이터 준비 중'}
+              {game
+                ? `행정동 ${total.toLocaleString()}개 · Tick ${game.tick}`
+                : '데이터 준비 중'}
             </small>
           </div>
 
-          {game?.phase === 'running' && (
-            <>
-              <span className="tick">Tick {game.tick}</span>
+          <div className="map-toolbar">
+            <button
+              className={commandOpen ? 'active' : ''}
+              onClick={() => setCommandOpen((open) => !open)}
+            >
+              지휘
+            </button>
+            {game?.phase === 'running' && (
               <button
-                title="일시정지/재개 · Space"
+                className={speedOpen ? 'active' : ''}
+                onClick={() => setSpeedOpen((open) => !open)}
+              >
+                속도 ×{game.speed}
+              </button>
+            )}
+            <button
+              className={rulesOpen ? 'active' : ''}
+              onClick={() => setRulesOpen((open) => !open)}
+            >
+              규칙
+            </button>
+          </div>
+        </div>
+
+        {game?.phase === 'running' && speedOpen && (
+          <div className="speed-panel">
+            <div className="speed-panel-head">
+              <strong>시간 제어</strong>
+              <button onClick={() => setSpeedOpen(false)}>닫기</button>
+            </div>
+            <button
+              className={!game.running ? 'active' : ''}
+              onClick={() =>
+                setGame((previous) =>
+                  previous ? { ...previous, running: !previous.running } : previous,
+                )
+              }
+            >
+              {game.running ? '일시정지' : '재개'}
+            </button>
+            {([1, 2, 4] as const).map((speed) => (
+              <button
+                key={speed}
+                className={game.speed === speed ? 'active' : ''}
                 onClick={() =>
                   setGame((previous) =>
-                    previous ? { ...previous, running: !previous.running } : previous,
+                    previous ? { ...previous, speed } : previous,
                   )
                 }
               >
-                {game.running ? '일시정지' : '재개'}
+                ×{speed}
               </button>
-              {([1, 2, 4] as const).map((speed) => (
-                <button
-                  key={speed}
-                  title={`게임 속도 ×${speed} · 숫자 ${speed}`}
-                  className={game.speed === speed ? 'active' : ''}
-                  onClick={() =>
-                    setGame((previous) => (previous ? { ...previous, speed } : previous))
-                  }
-                >
-                  ×{speed}
-                </button>
-              ))}
-            </>
-          )}
+            ))}
+          </div>
+        )}
 
-          {game && (
-            <>
-              <button disabled={game.phase === 'setup'} onClick={handleSave}>
-                저장
-              </button>
-              <button disabled={!savedAt} onClick={handleLoad}>
-                불러오기
-              </button>
-            </>
-          )}
+        {rulesOpen && (
+          <section className="rules-panel">
+            <div className="rules-head">
+              <div>
+                <p className="eyebrow">게임 규칙</p>
+                <h2>지도에서 영토를 넓히면 됩니다.</h2>
+              </div>
+              <button onClick={() => setRulesOpen(false)}>닫기</button>
+            </div>
 
-          {game && game.phase !== 'setup' && (
-            <button onClick={handleNewGame}>새 게임</button>
-          )}
-        </div>
+            <div className="rules-steps">
+              <div>
+                <strong>1. 시작</strong>
+                <span>지휘 패널을 열고 시작할 행정동을 고른 뒤 게임을 시작합니다.</span>
+              </div>
+              <div>
+                <strong>2. 점령</strong>
+                <span>내 영토를 한 번 선택하고, 그 영토와 맞닿은 중립/적 영토를 지도에서 다시 클릭하면 점령을 시도합니다.</span>
+              </div>
+              <div>
+                <strong>3. 병력·보급</strong>
+                <span>병력이 많고 보급이 높을수록 점령에 유리합니다. 연결된 영토는 회복하고, 고립된 영토는 보급이 떨어집니다.</span>
+              </div>
+              <div>
+                <strong>4. 지원</strong>
+                <span>지휘 패널에서 인접한 아군 영토로 병력 일부를 지원 이동시킬 수 있습니다.</span>
+              </div>
+              <div>
+                <strong>5. 승리</strong>
+                <span>전국 행정동을 모두 점령하면 승리합니다. 내 영토가 0개가 되면 패배합니다.</span>
+              </div>
+            </div>
+
+            <p className="rules-tip">
+              기본 조작: 지도 클릭 = 선택/공격 · Space = 정지/재개 · 1/2/4 = 배속 · F = 선택 지역 확대
+            </p>
+          </section>
+        )}
 
         {game && counts && game.phase !== 'setup' && total > 0 && (
           <div className="situation-panel">
@@ -744,14 +795,32 @@ function App() {
         )}
       </section>
 
-      <aside className="sidebar">
-        <header>
-          <p className="eyebrow">전국 영역 통제</p>
-          <h1>행정동 RTS</h1>
-          <p className="muted">
-            실제 행정동 경계를 게임 영토로 사용합니다. 게임 수치는 현실의 군사 자료가 아닌 추상화된 값입니다.
-          </p>
+      {!commandOpen && (
+        <button className="command-tab" onClick={() => setCommandOpen(true)}>
+          지휘 열기
+        </button>
+      )}
+
+      <aside className={`sidebar ${commandOpen ? 'open' : 'closed'}`}>
+        <header className="command-header">
+          <div>
+            <p className="eyebrow">지휘 패널</p>
+            <h1>행정동 RTS</h1>
+          </div>
+          <button className="drawer-close" onClick={() => setCommandOpen(false)}>
+            닫기
+          </button>
         </header>
+
+        {game && (
+          <div className="command-actions">
+            <button disabled={game.phase === 'setup'} onClick={handleSave}>저장</button>
+            <button disabled={!savedAt} onClick={handleLoad}>불러오기</button>
+            {game.phase !== 'setup' && (
+              <button onClick={handleNewGame}>새 게임</button>
+            )}
+          </div>
+        )}
 
         {game && counts && (
           <div className="faction-grid">
@@ -977,7 +1046,11 @@ function App() {
               disabled={!selected}
               onClick={() => {
                 if (!selected) return
-                setGame((previous) => (previous ? startGame(previous, selected.id) : previous))
+                setGame((previous) =>
+                  previous ? startGame(previous, selected.id) : previous,
+                )
+                setCommandOpen(false)
+                setRulesOpen(false)
               }}
             >
               {selected ? `${selected.name}에서 시작` : '시작 지역 선택'}
