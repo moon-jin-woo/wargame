@@ -680,19 +680,47 @@ function normalizeTerritories(
   territories: Record<string, TerritoryState>,
 ): Record<string, TerritoryState> {
   return Object.fromEntries(
-    Object.entries(territories).map(([id, territory]) => [
-      id,
-      {
-        ...territory,
-        factories: Number.isFinite(territory.factories)
-          ? Math.max(0, Math.floor(territory.factories))
-          : 0,
-        divisions: 0,
-        defense: Number.isFinite(territory.defense)
-          ? Math.max(0, Math.floor(territory.defense))
-          : 0,
-      },
-    ]),
+    Object.entries(territories).map(([id, territory]) => {
+      const legacyFactories = Number.isFinite(territory.factories)
+        ? Math.max(0, Math.floor(territory.factories))
+        : 0
+      const industry = {
+        civilian: Math.max(
+          0,
+          Math.floor(territory.industry?.civilian ?? legacyFactories),
+        ),
+        military: Math.max(
+          0,
+          Math.floor(territory.industry?.military ?? 0),
+        ),
+        logistics: Math.max(
+          0,
+          Math.floor(territory.industry?.logistics ?? 0),
+        ),
+        infrastructure: Math.max(
+          0,
+          Math.floor(territory.industry?.infrastructure ?? 0),
+        ),
+        research: Math.max(
+          0,
+          Math.floor(territory.industry?.research ?? 0),
+        ),
+      }
+
+      return [
+        id,
+        {
+          ...territory,
+          factories: industry.civilian,
+          industry,
+          terrain: territory.terrain ?? 'plains',
+          divisions: 0,
+          defense: Number.isFinite(territory.defense)
+            ? Math.max(0, Math.floor(territory.defense))
+            : 0,
+        },
+      ]
+    }),
   )
 }
 
@@ -728,6 +756,38 @@ export function createInitialState(
       red: STARTING_FUNDS,
       blue: STARTING_FUNDS,
       green: STARTING_FUNDS,
+    },
+    researchPoints: {
+      player: 0,
+      red: 0,
+      blue: 0,
+      green: 0,
+    },
+    technologies: {
+      player: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      red: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      blue: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      green: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
     },
     aiCount: 3,
     difficulty: 'normal',
@@ -797,6 +857,22 @@ function claimCluster(
       owner,
       troops: 0,
       factories: index === 0 ? 2 : 0,
+      industry:
+        index === 0
+          ? {
+              civilian: 2,
+              military: 1,
+              logistics: 1,
+              infrastructure: 2,
+              research: 0,
+            }
+          : {
+              civilian: 0,
+              military: 0,
+              logistics: 0,
+              infrastructure: 1,
+              research: 0,
+            },
       divisions: 0,
       defense: index === 0 ? 1 : 0,
       supply: index === 0 ? 92 : 78,
@@ -845,6 +921,13 @@ export function startGame(state: GameState, startId: string): GameState {
         owner: 'neutral' as FactionId,
         troops: 0,
         factories: 0,
+        industry: {
+          civilian: 0,
+          military: 0,
+          logistics: 0,
+          infrastructure: 0,
+          research: 0,
+        },
         divisions: 0,
         defense: 0,
         supply: 55,
@@ -882,6 +965,38 @@ export function startGame(state: GameState, startId: string): GameState {
       red: STARTING_FUNDS,
       blue: STARTING_FUNDS,
       green: STARTING_FUNDS,
+    },
+    researchPoints: {
+      player: 0,
+      red: 0,
+      blue: 0,
+      green: 0,
+    },
+    technologies: {
+      player: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      red: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      blue: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      green: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
     },
     productionQueue: [],
     battles: [],
