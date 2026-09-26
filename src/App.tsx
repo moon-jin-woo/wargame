@@ -2217,7 +2217,7 @@ function App() {
               )}
             </div>
 
-            {selectedDivision?.owner === 'player' && (
+            {hqFaction === 'player' && selectedDivision?.owner === 'player' && (
               <div className="division-inspector">
                 <div className="division-inspector-title">
                   <span className="division-counter-icon">◆</span>
@@ -2394,7 +2394,9 @@ function App() {
               </div>
             )}
 
-            <div className="division-list">
+            <div
+              className={`division-list ${hqFaction === 'player' ? '' : 'hq-player-hidden'}`}
+            >
               {playerDivisionList.map((division) => {
                 const territory = game.territories[division.locationId]
                 const selectedUnit = game.selectedDivisionId === division.id
