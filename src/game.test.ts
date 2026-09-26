@@ -278,12 +278,9 @@ describe('division unit game loop', () => {
 
     state = buildIndustry(state, 'a', 'logistics')
     expect(state.productionQueue[0]?.kind).toBe('logistics')
+    const totalTicks = state.productionQueue[0]?.totalTicks ?? 0
 
-    for (
-      let tick = 0;
-      tick < state.productionQueue[0].totalTicks;
-      tick += 1
-    ) {
+    for (let tick = 0; tick < totalTicks; tick += 1) {
       state = advanceTick(state)
     }
 
