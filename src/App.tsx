@@ -556,6 +556,196 @@ function App() {
   }, [game?.tick])
 
   const selected = game?.selectedId ? game.territories[game.selectedId] : null
+  const selectedDivision =
+    game?.selectedDivisionId
+      ? game.divisionUnits[game.selectedDivisionId] ?? null
+      : null
+
+  const playerDivisionList = useMemo(
+    () => (game ? playerDivisions(game) : []),
+    [game?.divisionUnits],
+  )
+
+  const divisionsHere = useMemo(
+    () => (game && selected ? divisionsAt(game, selected.id) : []),
+    [game?.divisionUnits, selected?.id],
+  )
+
+  const divisionStacks = useMemo(() => {
+    if (!game) return []
+
+    const grouped = new Map<
+      string,
+      {
+        key: string
+        territoryId: string
+        owner: DivisionUnit['owner']
+        ids: string[]
+        moving: number
+        fighting: number
+      }
+    >()
+
+    for (const division of Object.values(game.divisionUnits)) {
+      const key = `${division.locationId}:${division.owner}`
+      const current = grouped.get(key) ?? {
+        key,
+        territoryId: division.locationId,
+        owner: division.owner,
+        ids: [],
+        moving: 0,
+        fighting: 0,
+      }
+
+      current.ids.push(division.id)
+      if (division.status === 'moving') current.moving += 1
+      if (
+        division.status === 'attacking' ||
+        division.status === 'defending'
+      ) {
+        current.fighting += 1
+      }
+      grouped.set(key, current)
+    }
+
+    return [...grouped.values()].sort((a, b) =>
+      a.key.localeCompare(b.key),
+    )
+  }, [game?.divisionUnits])
+
+  const divisionStackSignature = useMemo(
+    () =>
+      divisionStacks
+        .map(
+          (stack) =>
+            `${stack.key}:${stack.ids.join(',')}:${stack.moving}:${stack.fighting}`,
+        )
+        .join('|'),
+    [divisionStacks],
+  )
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoaded || !game) return
+
+    for (const marker of divisionMarkersRef.current.values()) {
+      marker.remove()
+    }
+    divisionMarkersRef.current.clear()
+
+    for (const stack of divisionStacks) {
+      const territory = game.territories[stack.territoryId]
+      if (!territory) continue
+
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.className = 'division-map-counter'
+      element.style.setProperty('--division-color', ownerColor(stack.owner, game))
+      element.dataset.selected = stack.ids.includes(game.selectedDivisionId ?? '')
+        ? 'true'
+        : 'false'
+      element.dataset.fighting = stack.fighting > 0 ? 'true' : 'false'
+      element.dataset.moving = stack.moving > 0 ? 'true' : 'false'
+      element.innerHTML = `<span class="division-symbol">◆</span><strong>${stack.ids.length}</strong>`
+      element.title = `${ownerName(stack.owner, game)} · ${territory.name} · 사단 ${stack.ids.length}`
+
+      element.addEventListener('click', (event) => {
+        event.stopPropagation()
+        setGame((previous) => {
+          if (!previous) return previous
+          const playerUnit = stack.ids
+            .map((id) => previous.divisionUnits[id])
+            .find((division) => division?.owner === 'player')
+
+          return {
+            ...previous,
+            selectedId: stack.territoryId,
+            selectedDivisionId:
+              playerUnit?.id ??
+              (stack.owner === 'player'
+                ? previous.selectedDivisionId
+                : null),
+          }
+        })
+        setArmyOpen(true)
+      })
+
+      const marker = new maplibregl.Marker({
+        element,
+        anchor: 'center',
+      })
+        .setLngLat(territory.centroid)
+        .addTo(map)
+
+      divisionMarkersRef.current.set(stack.key, marker)
+    }
+
+    return () => {
+      for (const marker of divisionMarkersRef.current.values()) {
+        marker.remove()
+      }
+      divisionMarkersRef.current.clear()
+    }
+  }, [
+    mapLoaded,
+    divisionStackSignature,
+    game?.selectedDivisionId,
+    game?.factionColors,
+  ])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady) return
+
+    const source = map.getSource(
+      DIVISION_ROUTE_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+
+    if (!selectedDivision?.order || !game) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: [],
+      })
+      return
+    }
+
+    const current = game.territories[selectedDivision.locationId]
+    const path = selectedDivision.order.path
+      .map((id) => game.territories[id])
+      .filter((territory): territory is TerritoryState => Boolean(territory))
+
+    if (!current || path.length === 0) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: [],
+      })
+      return
+    }
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              current.centroid,
+              ...path.map((territory) => territory.centroid),
+            ],
+          },
+        },
+      ],
+    })
+  }, [
+    selectedDivision?.id,
+    selectedDivision?.locationId,
+    selectedDivision?.order?.targetId,
+    selectedDivision?.order?.remainingTicks,
+    layerReady,
+  ])
+
   const selectedIsIsolated = Boolean(
     selected &&
       selected.owner !== 'neutral' &&
