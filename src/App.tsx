@@ -12,6 +12,7 @@ import {
   transferTroops,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
+import { drawTerritoryCanvas, findTerritoryAtLngLat } from './territoryCanvas'
 import type {
   AdminMapData,
   AiCount,
@@ -41,6 +42,7 @@ function ownerColor(owner: FactionId, game: GameState): string {
 function App() {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const territoryCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const previousTerritories = useRef<Record<string, TerritoryState>>({})
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
@@ -307,6 +309,55 @@ function App() {
   }, [game?.selectedId, layerReady])
 
   useEffect(() => {
+    const map = mapRef.current
+    const canvas = territoryCanvasRef.current
+    if (!map || !canvas || !mapLoaded || !adminData || !game) return
+
+    let frame = 0
+
+    const draw = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        drawTerritoryCanvas(canvas, map, adminData, game)
+        canvas.style.opacity = '1'
+      })
+    }
+
+    const hide = () => {
+      canvas.style.opacity = '0'
+    }
+
+    const fallbackClick = (event: maplibregl.MapMouseEvent) => {
+      const id = findTerritoryAtLngLat(
+        adminData,
+        event.lngLat.lng,
+        event.lngLat.lat,
+      )
+
+      if (!id) return
+      setGame((previous) =>
+        previous && previous.territories[id]
+          ? { ...previous, selectedId: id }
+          : previous,
+      )
+    }
+
+    map.on('movestart', hide)
+    map.on('moveend', draw)
+    map.on('resize', draw)
+    map.on('click', fallbackClick)
+    draw()
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      map.off('movestart', hide)
+      map.off('moveend', draw)
+      map.off('resize', draw)
+      map.off('click', fallbackClick)
+    }
+  }, [adminData, game?.territories, game?.selectedId, mapLoaded])
+
+  useEffect(() => {
     if (!game || !game.running || game.phase !== 'running') return
 
     const interval = window.setInterval(() => {
@@ -518,6 +569,11 @@ function App() {
     <main className="app-shell">
       <section className="map-panel">
         <div ref={mapContainer} className="map" />
+        <canvas
+          ref={territoryCanvasRef}
+          className="territory-canvas"
+          aria-hidden="true"
+        />
 
         <div className="topbar">
           <div className="brand-block">
