@@ -1806,6 +1806,44 @@ function App() {
               </div>
             </div>
 
+            <div className="national-strategy-panel">
+              <div className="panel-section-title">
+                <strong>국가 전략</strong>
+                <span>
+                  {nationalStrategyLabels[
+                    game.nationalStrategies.player ??
+                      'balancedDevelopment'
+                  ]}
+                </span>
+              </div>
+              <div className="national-strategy-grid">
+                {NATIONAL_STRATEGIES.map((strategy) => (
+                  <button
+                    key={strategy}
+                    className={
+                      game.nationalStrategies.player === strategy
+                        ? 'active'
+                        : ''
+                    }
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous
+                          ? setNationalStrategy(
+                              previous,
+                              'player',
+                              strategy,
+                            )
+                          : previous,
+                      )
+                    }
+                  >
+                    <strong>{nationalStrategyLabels[strategy]}</strong>
+                    <span>{nationalStrategyDescriptions[strategy]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="technology-tree">
               {(
                 ['industry', 'logistics', 'command', 'engineering'] as TechnologyCategory[]
@@ -1844,6 +1882,15 @@ function App() {
                             <div>
                               <strong>{technologyLabels[technology]}</strong>
                               <span>{technologyDescription(technology)}</span>
+                              {!maxed && (
+                                <small className="technology-effect">
+                                  다음 레벨 ·{' '}
+                                  {technologyEffectSummary(
+                                    technology,
+                                    level,
+                                  )}
+                                </small>
+                              )}
                             </div>
                             <b>
                               Lv.{level}/{definition.maxLevel}
