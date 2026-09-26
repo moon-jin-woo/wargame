@@ -463,23 +463,23 @@ describe('division unit game loop', () => {
         sidoName: '플레이어권',
       }),
       z: territory('z', 'neutral', ['v', 'w', 'x', 'y'], {
-        centroid: [130, 38],
+        centroid: [131, 39],
         sidoName: 'AI권',
       }),
       v: territory('v', 'neutral', ['z'], {
-        centroid: [129.8, 37.9],
+        centroid: [130, 38],
         sidoName: 'AI권',
       }),
       w: territory('w', 'neutral', ['z'], {
-        centroid: [129.9, 38.1],
+        centroid: [130.1, 38],
         sidoName: 'AI권',
       }),
       x: territory('x', 'neutral', ['z'], {
-        centroid: [130.1, 37.9],
+        centroid: [130, 38.1],
         sidoName: 'AI권',
       }),
       y: territory('y', 'neutral', ['z'], {
-        centroid: [130.2, 38.1],
+        centroid: [130.1, 38.1],
         sidoName: 'AI권',
       }),
     }
@@ -492,7 +492,7 @@ describe('division unit game loop', () => {
       (army) => army.owner === 'red',
     )
 
-    expect(redCorps.length).toBeGreaterThanOrEqual(3)
+    expect(redCorps.length).toBeGreaterThanOrEqual(4)
     expect(
       redCorps.every((army) => typeof army.theater === 'string'),
     ).toBe(true)
