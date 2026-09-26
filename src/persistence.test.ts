@@ -98,12 +98,12 @@ describe('division save migration', () => {
       armies: {
         'army-test': {
           id: 'army-test',
-          owner: 'player',
+          owner: 'player' as const,
           name: '제1군',
           commander: '박준혁',
           divisionIds: [unit.id],
           objectiveId: 'b',
-          planStatus: 'planning',
+          planStatus: 'planning' as const,
           preparation: 48,
           createdTick: 2,
         },
