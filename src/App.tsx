@@ -3,9 +3,11 @@ import * as maplibregl from 'maplibre-gl'
 import { loadLatestAdminDongs } from './adminData'
 import {
   advanceTick,
+  armiesForOwner,
   attackStanceLabels,
   buildDivision,
   buildIndustry,
+  buildRailway,
   cancelDivisionOrder,
   cancelProduction,
   createArmy,
@@ -28,6 +30,8 @@ import {
   issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
+  MAX_RAILWAY,
+  RAILWAY_COST,
   ownerCounts,
   playerArmies,
   playerDivisions,
@@ -38,13 +42,19 @@ import {
   renameCommander,
   renameDivision,
   setArmyObjective,
+  setArmyStrategy,
   setDivisionRole,
   assignDivisionToArmy,
   startGame,
   researchTechnology,
+  technologyAvailable,
+  technologyCategories,
   technologyCost,
+  technologyDefinitions,
+  TECHNOLOGY_IDS,
   technologyLabels,
-  TECHNOLOGY_MAX_LEVEL,
+  strategyDescriptions,
+  strategyLabels,
   terrainLabels,
   territoryMilitaryPower,
   upgradeDefense,
@@ -63,7 +73,10 @@ import type {
   GameSpeed,
   GameState,
   IndustryType,
+  PlayableFactionId,
   ProductionKind,
+  StrategyDoctrine,
+  TechnologyCategory,
   TechnologyId,
   TerritoryState,
 } from './types'
@@ -76,7 +89,9 @@ const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
-type MapMode = 'control' | 'supply' | 'industry' | 'terrain'
+const RAILWAY_SOURCE_ID = 'railway-network'
+const RAILWAY_LAYER_ID = 'railway-network-line'
+type MapMode = 'control' | 'supply' | 'industry' | 'terrain' | 'railway'
 
 const INDUSTRY_TYPES: IndustryType[] = [
   'civilian',
@@ -84,13 +99,6 @@ const INDUSTRY_TYPES: IndustryType[] = [
   'logistics',
   'infrastructure',
   'research',
-]
-
-const TECHNOLOGY_TYPES: TechnologyId[] = [
-  'industrialMethods',
-  'logisticsPlanning',
-  'commandNetwork',
-  'fieldEngineering',
 ]
 
 const TERRAIN_COLORS: Record<TerritoryState['terrain'], string> = {
@@ -151,16 +159,7 @@ function industryDescription(kind: IndustryType): string {
 }
 
 function technologyDescription(technology: TechnologyId): string {
-  if (technology === 'industrialMethods') {
-    return '산업 수익과 건설 속도 향상'
-  }
-  if (technology === 'logisticsPlanning') {
-    return '보급 회복과 고립 완화'
-  }
-  if (technology === 'commandNetwork') {
-    return '군 작전 준비도 축적 가속'
-  }
-  return '방어·참호화 효율 향상'
+  return technologyDefinitions[technology].description
 }
 
 function divisionStatusLabel(division: DivisionUnit): string {
@@ -206,6 +205,7 @@ function App() {
   const [researchOpen, setResearchOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
+  const [hqFaction, setHqFaction] = useState<PlayableFactionId>('player')
   const [objectiveMode, setObjectiveMode] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
