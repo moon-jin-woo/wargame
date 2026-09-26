@@ -6,7 +6,9 @@ export type Difficulty = 'easy' | 'normal' | 'hard'
 export type AiCount = 1 | 2 | 3
 export type GameSpeed = 1 | 2 | 4 | 10
 export type AttackStance = 'cautious' | 'balanced' | 'aggressive'
-export type ProductionKind = 'factory' | 'division' | 'defense'
+export type IndustryType = 'civilian' | 'military' | 'logistics' | 'infrastructure' | 'research'
+export type ProductionKind = IndustryType | 'factory' | 'division' | 'defense'
+export type TerrainType = 'urban' | 'plains' | 'hills' | 'mountain' | 'forest' | 'coastal' | 'island'
 export type DivisionOrderType = 'move' | 'attack'
 export type DivisionStatus = 'idle' | 'moving' | 'attacking' | 'defending'
 export type DivisionRole = 'line' | 'mobile' | 'guard'
@@ -33,6 +35,14 @@ export interface GameEvent {
   tick: number
   kind: GameEventKind
   message: string
+}
+
+export interface IndustryState {
+  civilian: number
+  military: number
+  logistics: number
+  infrastructure: number
+  research: number
 }
 
 export interface ProductionOrder {
@@ -107,6 +117,8 @@ export interface TerritoryState {
   troops: number
   supply: number
   factories: number
+  industry: IndustryState
+  terrain: TerrainType
   divisions: number
   defense: number
   neighbors: string[]
@@ -125,6 +137,7 @@ export interface GameState {
   aiNames: Record<AiFactionId, string>
   factionColors: Record<PlayableFactionId, string>
   funds: Record<PlayableFactionId, number>
+  researchPoints: Record<PlayableFactionId, number>
   aiCount: AiCount
   difficulty: Difficulty
   attackStance: AttackStance
