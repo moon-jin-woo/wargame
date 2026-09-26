@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   advanceTick,
+  assignDivisionToArmy,
   buildDivision,
   buildFactory,
   cancelProduction,
+  createArmy,
   createInitialState,
   DIVISION_COST,
+  executeArmyPlan,
   FACTORY_COST,
   issueDivisionOrder,
   PRODUCTION_TICKS,
+  setArmyObjective,
+  setDivisionRole,
 } from './game'
 import type { DivisionUnit, GameState, TerritoryState } from './types'
 
@@ -47,10 +52,13 @@ function division(
     owner,
     name: id,
     commander: '테스트 지휘관',
+    role: 'line',
+    armyId: null,
     locationId,
     strength: 100,
     organization: 90,
     experience: 0,
+    entrenchment: 0,
     status: 'idle',
     order: null,
     createdTick: 0,
@@ -190,4 +198,68 @@ describe('division unit game loop', () => {
     expect(state.territories.b.owner).toBe('player')
     expect(state.divisionUnits['p-1']?.locationId).toBe('b')
   })
+
+  it('creates an army, assigns a division and builds planning preparation', () => {
+    let state = runningState()
+
+    state = createArmy(state)
+    const armyId = state.selectedArmyId
+    expect(armyId).not.toBeNull()
+
+    state = assignDivisionToArmy(state, 'p-1', armyId)
+    state = setArmyObjective(state, armyId!, 'd')
+
+    expect(state.divisionUnits['p-1'].armyId).toBe(armyId)
+    expect(state.armies[armyId!].planStatus).toBe('planning')
+
+    for (let tick = 0; tick < 6; tick += 1) {
+      state = advanceTick(state)
+    }
+
+    expect(state.armies[armyId!].preparation).toBeGreaterThan(0)
+  })
+
+  it('executes an army plan by issuing orders to assigned idle divisions', () => {
+    let state = runningState()
+    state = createArmy(state)
+    const armyId = state.selectedArmyId!
+
+    state = assignDivisionToArmy(state, 'p-1', armyId)
+    state = setArmyObjective(state, armyId, 'd')
+    state = executeArmyPlan(state, armyId)
+
+    expect(state.armies[armyId].planStatus).toBe('executing')
+    expect(state.divisionUnits['p-1'].status).toBe('moving')
+    expect(state.divisionUnits['p-1'].order?.targetId).toBe('d')
+  })
+
+  it('builds entrenchment while an idle division remains supplied', () => {
+    let state = runningState()
+    expect(state.divisionUnits['p-1'].entrenchment).toBe(0)
+
+    state = advanceTick(state)
+    state = advanceTick(state)
+
+    expect(state.divisionUnits['p-1'].entrenchment).toBeGreaterThan(0)
+  })
+
+  it('changes a division role while idle and clears entrenchment', () => {
+    let state = runningState()
+    state = {
+      ...state,
+      divisionUnits: {
+        ...state.divisionUnits,
+        'p-1': {
+          ...state.divisionUnits['p-1'],
+          entrenchment: 40,
+        },
+      },
+    }
+
+    state = setDivisionRole(state, 'p-1', 'mobile')
+
+    expect(state.divisionUnits['p-1'].role).toBe('mobile')
+    expect(state.divisionUnits['p-1'].entrenchment).toBe(0)
+  })
+
 })
