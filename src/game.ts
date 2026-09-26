@@ -1,9 +1,11 @@
 import type {
   AiCount,
   AiFactionId,
+  ArmyGroup,
   AttackStance,
   BattleState,
   Difficulty,
+  DivisionRole,
   DivisionUnit,
   Faction,
   FactionId,
@@ -79,6 +81,30 @@ const stanceOrganizationCost: Record<AttackStance, number> = {
   cautious: 1.7,
   balanced: 2.4,
   aggressive: 3.2,
+}
+
+export const divisionRoleLabels: Record<DivisionRole, string> = {
+  line: '전열',
+  mobile: '기동',
+  guard: '경비',
+}
+
+const rolePower: Record<DivisionRole, number> = {
+  line: 1,
+  mobile: 0.94,
+  guard: 0.9,
+}
+
+const roleDefense: Record<DivisionRole, number> = {
+  line: 1,
+  mobile: 0.92,
+  guard: 1.18,
+}
+
+const roleMoveMultiplier: Record<DivisionRole, number> = {
+  line: 1,
+  mobile: 0.72,
+  guard: 1.18,
 }
 
 function activeAiFactions(count: AiCount): AiFactionId[] {
@@ -162,15 +188,21 @@ function makeDivision(
     `${locationId}:${seedSuffix}`,
   ).toString(36)}`
 
+  const role: DivisionRole =
+    ordinal % 5 === 0 ? 'mobile' : ordinal % 4 === 0 ? 'guard' : 'line'
+
   return {
     id,
     owner,
     name: divisionDisplayName(owner, ordinal),
     commander: commanderName(`${owner}:${locationId}:${ordinal}:${seedSuffix}`),
+    role,
+    armyId: null,
     locationId,
     strength: 100,
     organization: 85,
     experience: 0,
+    entrenchment: 0,
     status: 'idle',
     order: null,
     createdTick,
@@ -314,6 +346,7 @@ export function createInitialState(
     tick: 0,
     selectedId: firstId,
     selectedDivisionId: null,
+    selectedArmyId: null,
     playerName: '플레이어 세력',
     aiNames: {
       red: '적색 세력',
@@ -341,6 +374,7 @@ export function createInitialState(
     productionQueue: [],
     battles: [],
     divisionUnits: {},
+    armies: {},
     territories: normalized,
   }
 }
@@ -478,6 +512,7 @@ export function startGame(state: GameState, startId: string): GameState {
     tick: 0,
     selectedId: startId,
     selectedDivisionId: null,
+    selectedArmyId: null,
     funds: {
       player: STARTING_FUNDS,
       red: STARTING_FUNDS,
@@ -487,6 +522,7 @@ export function startGame(state: GameState, startId: string): GameState {
     productionQueue: [],
     battles: [],
     divisionUnits: {},
+    armies: {},
     events: [],
     territories,
   }
