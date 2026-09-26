@@ -6,6 +6,7 @@ import type {
   FactionId,
   GameEventKind,
   GameState,
+  PlayableFactionId,
   TerritoryState,
 } from './types'
 
@@ -23,7 +24,26 @@ export const difficultyLabels: Record<Difficulty, string> = {
   hard: '어려움',
 }
 
+export const FACTORY_COST = 120
+export const DIVISION_COST = 80
+export const FACTORY_INCOME = 12
+export const ECONOMY_INTERVAL = 5
+export const MAX_FACTORIES = 4
+export const MAX_DEFENSE = 4
+
+const STARTING_FUNDS = 320
+const DIVISION_POWER = 100
+const DEFENSE_POWER = 60
 const aiFactions: AiFactionId[] = ['red', 'blue', 'green']
+
+export function defenseUpgradeCost(level: number): number {
+  if (level >= MAX_DEFENSE) return 0
+  return 70 + level * 50
+}
+
+export function territoryMilitaryPower(territory: TerritoryState): number {
+  return territory.divisions * DIVISION_POWER + territory.defense * DEFENSE_POWER
+}
 
 function activeAiFactions(count: AiCount): AiFactionId[] {
   return aiFactions.slice(0, count)
@@ -69,11 +89,34 @@ function distanceSquared(a: [number, number], b: [number, number]): number {
   return dx * dx + dy * dy
 }
 
+function normalizeTerritories(
+  territories: Record<string, TerritoryState>,
+): Record<string, TerritoryState> {
+  return Object.fromEntries(
+    Object.entries(territories).map(([id, territory]) => [
+      id,
+      {
+        ...territory,
+        factories: Number.isFinite(territory.factories)
+          ? Math.max(0, Math.floor(territory.factories))
+          : 0,
+        divisions: Number.isFinite(territory.divisions)
+          ? Math.max(0, Math.floor(territory.divisions))
+          : Math.max(0, Math.round((territory.troops ?? 0) / 35)),
+        defense: Number.isFinite(territory.defense)
+          ? Math.max(0, Math.floor(territory.defense))
+          : 0,
+      },
+    ]),
+  )
+}
+
 export function createInitialState(
   territories: Record<string, TerritoryState>,
   dataVersion: string,
 ): GameState {
-  const firstId = Object.keys(territories)[0] ?? null
+  const normalized = normalizeTerritories(territories)
+  const firstId = Object.keys(normalized)[0] ?? null
 
   return {
     phase: 'setup',
@@ -93,11 +136,17 @@ export function createInitialState(
       blue: '#7066dc',
       green: '#3f9b73',
     },
+    funds: {
+      player: STARTING_FUNDS,
+      red: STARTING_FUNDS,
+      blue: STARTING_FUNDS,
+      green: STARTING_FUNDS,
+    },
     aiCount: 3,
     difficulty: 'normal',
     dataVersion,
     events: [],
-    territories,
+    territories: normalized,
   }
 }
 
@@ -151,7 +200,10 @@ function claimCluster(
     next[id] = {
       ...territory,
       owner,
-      troops: index === 0 ? 85 : 48,
+      troops: 0,
+      factories: index === 0 ? 2 : 0,
+      divisions: index === 0 ? 4 : 1,
+      defense: index === 0 ? 1 : 0,
       supply: index === 0 ? 92 : 78,
     }
   })
@@ -169,7 +221,10 @@ export function startGame(state: GameState, startId: string): GameState {
       {
         ...territory,
         owner: 'neutral' as FactionId,
-        troops: Math.min(territory.troops, 35),
+        troops: 0,
+        factories: 0,
+        divisions: 0,
+        defense: 0,
         supply: 55,
       },
     ]),
@@ -194,11 +249,137 @@ export function startGame(state: GameState, startId: string): GameState {
       running: true,
       tick: 0,
       selectedId: startId,
+      funds: {
+        player: STARTING_FUNDS,
+        red: STARTING_FUNDS,
+        blue: STARTING_FUNDS,
+        green: STARTING_FUNDS,
+      },
       events: [],
       territories,
     },
     'system',
-    `게임 시작 · ${start.fullName}`,
+    `게임 시작 · ${start.fullName} · 시작 자금 ${STARTING_FUNDS}`,
+  )
+}
+
+export function factionIncomePerCycle(
+  state: GameState,
+  owner: PlayableFactionId,
+): number {
+  let factories = 0
+
+  for (const territory of Object.values(state.territories)) {
+    if (territory.owner === owner) factories += territory.factories
+  }
+
+  return factories * FACTORY_INCOME
+}
+
+function spendFunds(
+  state: GameState,
+  owner: PlayableFactionId,
+  amount: number,
+): GameState | null {
+  if (state.funds[owner] < amount) return null
+
+  return {
+    ...state,
+    funds: {
+      ...state.funds,
+      [owner]: state.funds[owner] - amount,
+    },
+  }
+}
+
+export function buildFactory(
+  state: GameState,
+  territoryId: string,
+): GameState {
+  if (state.phase !== 'running') return state
+  const territory = state.territories[territoryId]
+  if (
+    !territory ||
+    territory.owner !== 'player' ||
+    territory.factories >= MAX_FACTORIES
+  ) {
+    return state
+  }
+
+  const paid = spendFunds(state, 'player', FACTORY_COST)
+  if (!paid) return state
+
+  const territories = {
+    ...paid.territories,
+    [territoryId]: {
+      ...territory,
+      factories: territory.factories + 1,
+    },
+  }
+
+  return withEvent(
+    { ...paid, territories },
+    'economy',
+    `${territory.fullName} · 공장 건설 · -${FACTORY_COST}`,
+  )
+}
+
+export function buildDivision(
+  state: GameState,
+  territoryId: string,
+): GameState {
+  if (state.phase !== 'running') return state
+  const territory = state.territories[territoryId]
+  if (!territory || territory.owner !== 'player') return state
+
+  const paid = spendFunds(state, 'player', DIVISION_COST)
+  if (!paid) return state
+
+  const territories = {
+    ...paid.territories,
+    [territoryId]: {
+      ...territory,
+      divisions: territory.divisions + 1,
+    },
+  }
+
+  return withEvent(
+    { ...paid, territories },
+    'military',
+    `${territory.fullName} · 1개 사단 편성 · -${DIVISION_COST}`,
+  )
+}
+
+export function upgradeDefense(
+  state: GameState,
+  territoryId: string,
+): GameState {
+  if (state.phase !== 'running') return state
+  const territory = state.territories[territoryId]
+  if (
+    !territory ||
+    territory.owner !== 'player' ||
+    territory.defense >= MAX_DEFENSE
+  ) {
+    return state
+  }
+
+  const cost = defenseUpgradeCost(territory.defense)
+  const paid = spendFunds(state, 'player', cost)
+  if (!paid) return state
+
+  const territories = {
+    ...paid.territories,
+    [territoryId]: {
+      ...territory,
+      defense: territory.defense + 1,
+    },
+  }
+
+  return withEvent(
+    { ...paid, territories },
+    'military',
+    `${territory.fullName} · 방어력 ${territory.defense + 1}단계 · -${cost}`,
   )
 }
 
@@ -206,7 +387,7 @@ function resolveCapture(
   state: GameState,
   fromId: string,
   toId: string,
-  owner: FactionId,
+  owner: PlayableFactionId,
 ): GameState {
   const from = state.territories[fromId]
   const to = state.territories[toId]
@@ -217,37 +398,50 @@ function resolveCapture(
     from.owner !== owner ||
     to.owner === owner ||
     !from.neighbors.includes(toId) ||
-    from.troops < 18
+    from.divisions < 1
   ) {
     return state
   }
 
-  const committed = Math.max(8, Math.floor(from.troops * 0.38))
+  const committed = Math.max(1, Math.ceil(from.divisions * 0.5))
   const variation =
     0.9 + (hashString(`${fromId}:${toId}:${state.tick}`) % 21) / 100
-  const captureScore = committed * (0.8 + from.supply / 220) * variation
-  const holdScore = to.troops * (0.72 + to.supply / 260)
-  const success = captureScore > holdScore
+  const attackSupply = 0.65 + from.supply / 200
+  const defenseSupply = 0.7 + to.supply / 250
+  const attackPower = committed * DIVISION_POWER * attackSupply * variation
+  const defensePower =
+    (to.divisions * DIVISION_POWER + to.defense * DEFENSE_POWER + 25) *
+    defenseSupply
+  const success = attackPower > defensePower
 
   const territories = { ...state.territories }
   territories[fromId] = {
     ...from,
-    troops: Math.max(10, from.troops - committed),
-    supply: Math.max(20, from.supply - 4),
+    divisions: Math.max(0, from.divisions - committed),
+    supply: Math.max(20, from.supply - 6),
   }
 
   if (success) {
+    const survivorEstimate = Math.max(
+      1,
+      committed - Math.ceil(to.divisions * 0.5) - Math.floor(to.defense / 2),
+    )
+
     territories[toId] = {
       ...to,
       owner,
-      troops: Math.max(10, Math.floor(committed - holdScore * 0.45)),
+      divisions: survivorEstimate,
+      defense: Math.max(0, to.defense - 1),
       supply: Math.max(35, Math.floor((from.supply + to.supply) / 2)),
     }
   } else {
     territories[toId] = {
       ...to,
-      troops: Math.max(8, Math.floor(to.troops - captureScore * 0.3)),
-      supply: Math.max(25, to.supply - 2),
+      divisions: Math.max(
+        0,
+        to.divisions - Math.max(0, Math.floor(committed * 0.35)),
+      ),
+      supply: Math.max(25, to.supply - 3),
     }
   }
 
@@ -262,9 +456,13 @@ function resolveCapture(
     next,
     success ? 'capture' : 'defense',
     success
-      ? `${actor} · ${to.fullName} 점령`
-      : `${actor} · ${to.fullName} 점령 시도 저지`,
+      ? `${actor} · ${to.fullName} 점령 · ${survivingDivisions(territories[toId])}개 사단 잔존`
+      : `${actor} · ${to.fullName} 공격 실패`,
   )
+}
+
+function survivingDivisions(territory: TerritoryState): number {
+  return Math.max(0, Math.floor(territory.divisions))
 }
 
 export function captureTerritory(
@@ -292,23 +490,19 @@ export function transferTroops(
     from.owner !== 'player' ||
     to.owner !== 'player' ||
     !from.neighbors.includes(toId) ||
-    from.troops <= 20
+    from.divisions <= 1
   ) {
     return state
   }
 
-  const movable = Math.max(0, from.troops - 10)
-  const moved = Math.max(1, Math.floor(movable * 0.3))
-  if (moved <= 0) return state
-
   const territories = { ...state.territories }
   territories[fromId] = {
     ...from,
-    troops: Math.max(10, from.troops - moved),
+    divisions: from.divisions - 1,
   }
   territories[toId] = {
     ...to,
-    troops: Math.min(999, to.troops + moved),
+    divisions: to.divisions + 1,
   }
 
   return withEvent(
@@ -318,7 +512,7 @@ export function transferTroops(
       territories,
     },
     'support',
-    `${from.fullName} → ${to.fullName} · 병력 지수 ${moved} 지원`,
+    `${from.fullName} → ${to.fullName} · 1개 사단 지원 이동`,
   )
 }
 
@@ -327,19 +521,20 @@ function targetScore(
   difficulty: Difficulty,
 ): number {
   if (difficulty === 'easy') return 0
-  const neutralBonus = target.owner === 'neutral' ? 18 : 0
-  const weakness = Math.max(0, 120 - target.troops)
+  const neutralBonus = target.owner === 'neutral' ? 30 : 0
+  const militaryWeakness = Math.max(0, 500 - territoryMilitaryPower(target))
   const supplyWeakness = Math.max(0, 100 - target.supply)
-  return neutralBonus + weakness + supplyWeakness * 0.25
+  const factoryValue = target.factories * 25
+  return neutralBonus + militaryWeakness * 0.08 + supplyWeakness * 0.3 + factoryValue
 }
 
-function runAiTurn(state: GameState, owner: FactionId): GameState {
-  const threshold =
-    state.difficulty === 'easy' ? 36 : state.difficulty === 'hard' ? 23 : 28
+function runAiTurn(state: GameState, owner: AiFactionId): GameState {
+  const minimumDivisions =
+    state.difficulty === 'easy' ? 3 : state.difficulty === 'hard' ? 1 : 2
   const candidates = Object.values(state.territories).filter(
     (territory) =>
       territory.owner === owner &&
-      territory.troops >= threshold &&
+      territory.divisions >= minimumDivisions &&
       territory.neighbors.some(
         (id) => state.territories[id]?.owner !== owner,
       ),
@@ -363,15 +558,105 @@ function runAiTurn(state: GameState, owner: FactionId): GameState {
     to = targets[hashString(`${from.id}:${state.tick}`) % targets.length]
   } else {
     to = [...targets].sort((a, b) => {
-      const scoreDifference =
-        targetScore(b, state.difficulty) -
-        targetScore(a, state.difficulty)
-      if (scoreDifference !== 0) return scoreDifference
+      const difference =
+        targetScore(b, state.difficulty) - targetScore(a, state.difficulty)
+      if (difference !== 0) return difference
       return a.id.localeCompare(b.id)
     })[0]
   }
 
   return resolveCapture(state, from.id, to.id, owner)
+}
+
+function aiBuild(state: GameState, owner: AiFactionId): GameState {
+  const owned = Object.values(state.territories).filter(
+    (territory) => territory.owner === owner,
+  )
+  if (owned.length === 0) return state
+
+  const frontlines = owned.filter((territory) =>
+    territory.neighbors.some(
+      (id) => state.territories[id]?.owner !== owner,
+    ),
+  )
+  const target = [...(frontlines.length > 0 ? frontlines : owned)].sort(
+    (a, b) => a.divisions - b.divisions || a.id.localeCompare(b.id),
+  )[0]
+
+  let next = state
+
+  if (next.funds[owner] >= DIVISION_COST) {
+    next = {
+      ...next,
+      funds: {
+        ...next.funds,
+        [owner]: next.funds[owner] - DIVISION_COST,
+      },
+      territories: {
+        ...next.territories,
+        [target.id]: {
+          ...next.territories[target.id],
+          divisions: next.territories[target.id].divisions + 1,
+        },
+      },
+    }
+  }
+
+  const totalFactories = owned.reduce(
+    (sum, territory) => sum + territory.factories,
+    0,
+  )
+  const desiredFactories = Math.max(2, Math.ceil(owned.length / 4))
+
+  if (
+    totalFactories < desiredFactories &&
+    next.funds[owner] >= FACTORY_COST + DIVISION_COST
+  ) {
+    const factoryTarget = [...owned].sort(
+      (a, b) => a.factories - b.factories || a.id.localeCompare(b.id),
+    )[0]
+
+    if (next.territories[factoryTarget.id].factories < MAX_FACTORIES) {
+      next = {
+        ...next,
+        funds: {
+          ...next.funds,
+          [owner]: next.funds[owner] - FACTORY_COST,
+        },
+        territories: {
+          ...next.territories,
+          [factoryTarget.id]: {
+            ...next.territories[factoryTarget.id],
+            factories: next.territories[factoryTarget.id].factories + 1,
+          },
+        },
+      }
+    }
+  }
+
+  if (
+    state.difficulty === 'hard' &&
+    target.defense < 2 &&
+    next.funds[owner] >= defenseUpgradeCost(target.defense)
+  ) {
+    const defenseCost = defenseUpgradeCost(target.defense)
+    next = {
+      ...next,
+      funds: {
+        ...next.funds,
+        [owner]: next.funds[owner] - defenseCost,
+      },
+      territories: {
+        ...next.territories,
+        [target.id]: {
+          ...next.territories[target.id],
+          defense: next.territories[target.id].defense + 1,
+        },
+      },
+    }
+  }
+
+  return next
 }
 
 function updatePhase(state: GameState): GameState {
@@ -403,6 +688,35 @@ function updatePhase(state: GameState): GameState {
   return state
 }
 
+function applyIncome(state: GameState): GameState {
+  const active: PlayableFactionId[] = [
+    'player',
+    ...activeAiFactions(state.aiCount),
+  ]
+
+  const funds = { ...state.funds }
+  for (const owner of active) {
+    funds[owner] += factionIncomePerCycle(state, owner)
+  }
+
+  let next: GameState = { ...state, funds }
+  const playerIncome = factionIncomePerCycle(state, 'player')
+
+  if (playerIncome > 0) {
+    next = withEvent(
+      next,
+      'economy',
+      `공장 수익 +${playerIncome} · 보유 자금 ${funds.player}`,
+    )
+  }
+
+  for (const owner of activeAiFactions(state.aiCount)) {
+    next = aiBuild(next, owner)
+  }
+
+  return next
+}
+
 export function advanceTick(state: GameState): GameState {
   if (!state.running || state.phase !== 'running') return state
 
@@ -422,9 +736,6 @@ export function advanceTick(state: GameState): GameState {
 
       territories[id] = {
         ...territory,
-        troops: connected
-          ? Math.min(160, territory.troops + 1)
-          : territory.troops,
         supply: connected
           ? Math.min(100, territory.supply + 1.2)
           : Math.max(0, territory.supply - 3),
@@ -438,9 +749,13 @@ export function advanceTick(state: GameState): GameState {
     territories,
   }
 
+  if (nextTick % ECONOMY_INTERVAL === 0) {
+    next = applyIncome(next)
+  }
+
   const aiInterval =
     state.difficulty === 'easy'
-      ? 5
+      ? 6
       : state.difficulty === 'hard'
         ? 2
         : 3
