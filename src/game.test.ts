@@ -4,13 +4,13 @@ import {
   buildDivision,
   buildFactory,
   cancelProduction,
-  captureTerritory,
   createInitialState,
   DIVISION_COST,
   FACTORY_COST,
+  issueDivisionOrder,
   PRODUCTION_TICKS,
 } from './game'
-import type { GameState, TerritoryState } from './types'
+import type { DivisionUnit, GameState, TerritoryState } from './types'
 
 function territory(
   id: string,
@@ -26,35 +26,62 @@ function territory(
     sggName: '테스트시',
     owner,
     troops: 0,
-    supply: 80,
+    supply: 90,
     factories: 0,
     divisions: 0,
     defense: 0,
     neighbors,
-    centroid: [127, 36],
+    centroid: [127 + id.charCodeAt(0) * 0.0001, 36],
+    ...overrides,
+  }
+}
+
+function division(
+  id: string,
+  owner: DivisionUnit['owner'],
+  locationId: string,
+  overrides: Partial<DivisionUnit> = {},
+): DivisionUnit {
+  return {
+    id,
+    owner,
+    name: id,
+    commander: '테스트 지휘관',
+    locationId,
+    strength: 100,
+    organization: 90,
+    experience: 0,
+    status: 'idle',
+    order: null,
+    createdTick: 0,
     ...overrides,
   }
 }
 
 function runningState(): GameState {
   const territories = {
-    a: territory('a', 'player', ['b'], { divisions: 4 }),
-    b: territory('b', 'neutral', ['a', 'c']),
-    c: territory('c', 'neutral', ['b']),
+    a: territory('a', 'player', ['b'], { divisions: 1 }),
+    b: territory('b', 'player', ['a', 'c']),
+    c: territory('c', 'player', ['b', 'd']),
+    d: territory('d', 'neutral', ['c']),
   }
 
   const base = createInitialState(territories, 'test')
+  const unit = division('p-1', 'player', 'a')
+
   return {
     ...base,
     phase: 'running',
     running: true,
     selectedId: 'a',
+    selectedDivisionId: unit.id,
     aiCount: 1,
+    divisionUnits: { [unit.id]: unit },
     territories,
   }
 }
 
-describe('grand strategy game loop', () => {
+describe('division unit game loop', () => {
   it('queues a factory and completes it only after production time', () => {
     let state = runningState()
     const startingFunds = state.funds.player
@@ -70,23 +97,39 @@ describe('grand strategy game loop', () => {
     }
 
     expect(state.territories.a.factories).toBe(0)
-    expect(state.productionQueue).toHaveLength(1)
-
     state = advanceTick(state)
-
     expect(state.territories.a.factories).toBe(1)
     expect(state.productionQueue).toHaveLength(0)
   })
 
-  it('refunds 75 percent when a player production order is cancelled', () => {
+  it('creates a real division unit when division production finishes', () => {
+    let state = runningState()
+    const before = Object.keys(state.divisionUnits).length
+
+    state = buildDivision(state, 'a')
+    expect(state.funds.player).toBe(320 - DIVISION_COST)
+
+    for (let tick = 0; tick < PRODUCTION_TICKS.division; tick += 1) {
+      state = advanceTick(state)
+    }
+
+    expect(Object.keys(state.divisionUnits)).toHaveLength(before + 1)
+    expect(
+      Object.values(state.divisionUnits).some(
+        (unit) =>
+          unit.id !== 'p-1' &&
+          unit.owner === 'player' &&
+          unit.locationId === 'a',
+      ),
+    ).toBe(true)
+  })
+
+  it('refunds 75 percent when a production order is cancelled', () => {
     let state = runningState()
     const startingFunds = state.funds.player
 
     state = buildDivision(state, 'a')
     const order = state.productionQueue[0]
-
-    expect(order).toBeDefined()
-    expect(state.funds.player).toBe(startingFunds - DIVISION_COST)
 
     state = cancelProduction(state, order.id)
 
@@ -96,20 +139,55 @@ describe('grand strategy game loop', () => {
     )
   })
 
-  it('starts a battle first and resolves ownership over later ticks', () => {
+  it('routes an individual division across multiple friendly territories', () => {
     let state = runningState()
 
-    state = captureTerritory(state, 'a', 'b')
+    state = issueDivisionOrder(state, 'p-1', 'c')
 
-    expect(state.battles).toHaveLength(1)
-    expect(state.territories.b.owner).toBe('neutral')
-    expect(state.territories.a.divisions).toBeLessThan(4)
+    expect(state.divisionUnits['p-1'].status).toBe('moving')
+    expect(state.divisionUnits['p-1'].order?.path).toEqual(['b', 'c'])
 
-    for (let tick = 0; tick < 20 && state.territories.b.owner !== 'player'; tick += 1) {
+    for (let tick = 0; tick < 20; tick += 1) {
       state = advanceTick(state)
+      if (state.divisionUnits['p-1'].locationId === 'c') break
+    }
+
+    expect(state.divisionUnits['p-1'].locationId).toBe('c')
+    expect(state.divisionUnits['p-1'].status).toBe('idle')
+  })
+
+  it('captures territory only after a division arrives and wins the battle', () => {
+    let state = runningState()
+    state = {
+      ...state,
+      territories: {
+        ...state.territories,
+        b: territory('b', 'red', ['a', 'c'], {
+          divisions: 1,
+          defense: 0,
+          supply: 55,
+        }),
+      },
+      divisionUnits: {
+        ...state.divisionUnits,
+        r1: division('r1', 'red', 'b', {
+          strength: 22,
+          organization: 25,
+        }),
+      },
+    }
+
+    state = issueDivisionOrder(state, 'p-1', 'b')
+
+    expect(state.territories.b.owner).toBe('red')
+    expect(state.divisionUnits['p-1'].status).toBe('moving')
+
+    for (let tick = 0; tick < 40; tick += 1) {
+      state = advanceTick(state)
+      if (state.territories.b.owner === 'player') break
     }
 
     expect(state.territories.b.owner).toBe('player')
-    expect(state.battles).toHaveLength(0)
+    expect(state.divisionUnits['p-1']?.locationId).toBe('b')
   })
 })
