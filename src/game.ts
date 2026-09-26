@@ -877,11 +877,17 @@ function startDivisionBattle(
     return state
   }
 
+  const conflicting = state.battles.some(
+    (battle) =>
+      battle.toId === targetId &&
+      battle.attacker !== owner,
+  )
+  if (conflicting) return state
+
   const existing = state.battles.find(
     (battle) =>
       battle.attacker === owner &&
-      battle.toId === targetId &&
-      battle.fromId === source.id,
+      battle.toId === targetId,
   )
 
   if (existing) {
@@ -1294,7 +1300,21 @@ function processBattles(state: GameState): GameState {
     const source = territories[battle.fromId]
     const target = territories[battle.toId]
 
-    if (!source || !target || source.owner !== battle.attacker) {
+    if (
+      !source ||
+      !target ||
+      source.owner !== battle.attacker ||
+      target.owner !== battle.defender
+    ) {
+      for (const divisionId of battle.attackerDivisionIds) {
+        const division = divisionUnits[divisionId]
+        if (!division) continue
+        divisionUnits[divisionId] = {
+          ...division,
+          status: 'idle',
+          order: null,
+        }
+      }
       continue
     }
 
@@ -1322,12 +1342,20 @@ function processBattles(state: GameState): GameState {
 
     if (attackers.length === 0) continue
 
+    const averageAttackerSupply =
+      attackers.reduce(
+        (sum, division) =>
+          sum +
+          (territories[division.locationId]?.supply ?? source.supply),
+        0,
+      ) / Math.max(1, attackers.length)
+
     const attackerPower =
       attackers.reduce(
         (sum, division) => sum + divisionCombatPower(division),
         0,
       ) *
-      (0.62 + source.supply / 210) *
+      (0.62 + averageAttackerSupply / 210) *
       stancePower[battle.stance]
 
     const defenderPower =
