@@ -628,11 +628,36 @@ export function defenseUpgradeCost(level: number): number {
   return 70 + level * 50
 }
 
+function isIndustryKind(kind: ProductionKind): kind is IndustryType {
+  return (
+    kind === 'civilian' ||
+    kind === 'military' ||
+    kind === 'logistics' ||
+    kind === 'infrastructure' ||
+    kind === 'research'
+  )
+}
+
+function normalizedIndustryKind(
+  kind: ProductionKind,
+): IndustryType | null {
+  if (kind === 'factory') return 'civilian'
+  return isIndustryKind(kind) ? kind : null
+}
+
+export function productionKindLabel(kind: ProductionKind): string {
+  const industryKind = normalizedIndustryKind(kind)
+  if (industryKind) return industryLabels[industryKind]
+  if (kind === 'division') return '사단 편성'
+  return '방어 공사'
+}
+
 export function productionCost(
   kind: ProductionKind,
   territory: TerritoryState,
 ): number {
-  if (kind === 'factory') return FACTORY_COST
+  const industryKind = normalizedIndustryKind(kind)
+  if (industryKind) return INDUSTRY_COSTS[industryKind]
   if (kind === 'division') return DIVISION_COST
   return defenseUpgradeCost(territory.defense)
 }
@@ -642,9 +667,44 @@ export function productionDuration(
   territory: TerritoryState,
 ): number {
   if (kind === 'defense') {
-    return PRODUCTION_TICKS.defense + territory.defense * 4
+    return Math.max(
+      6,
+      PRODUCTION_TICKS.defense +
+        territory.defense * 4 -
+        territory.industry.infrastructure * 2,
+    )
   }
-  return PRODUCTION_TICKS[kind]
+
+  if (kind === 'division') {
+    return Math.max(
+      5,
+      PRODUCTION_TICKS.division -
+        Math.min(5, territory.industry.military),
+    )
+  }
+
+  const infrastructureReduction =
+    territory.industry.infrastructure * 1.25
+
+  return Math.max(
+    6,
+    Math.ceil(PRODUCTION_TICKS[kind] - infrastructureReduction),
+  )
+}
+
+function productionDurationForOwner(
+  state: GameState,
+  kind: ProductionKind,
+  territory: TerritoryState,
+  owner: PlayableFactionId,
+): number {
+  const base = productionDuration(kind, territory)
+  const technologyLevel =
+    state.technologies[owner]?.industrialMethods ?? 0
+  return Math.max(
+    4,
+    Math.ceil(base * (1 - technologyLevel * 0.06)),
+  )
 }
 
 export function territoryMilitaryPower(
@@ -669,11 +729,75 @@ export function factionIncomePerCycle(
   state: GameState,
   owner: PlayableFactionId,
 ): number {
-  let factories = 0
+  let civilianIndustry = 0
+  let urbanBonus = 0
+
   for (const territory of Object.values(state.territories)) {
-    if (territory.owner === owner) factories += territory.factories
+    if (territory.owner !== owner) continue
+    civilianIndustry += territory.industry.civilian
+    if (territory.terrain === 'urban') {
+      urbanBonus += territory.industry.civilian
+    }
   }
-  return factories * FACTORY_INCOME
+
+  const technologyLevel =
+    state.technologies[owner]?.industrialMethods ?? 0
+  const modifier = 1 + technologyLevel * 0.08
+  const base =
+    civilianIndustry * FACTORY_INCOME +
+    Math.floor(urbanBonus * 1.5)
+
+  return Math.floor(base * modifier)
+}
+
+export function factionResearchPerCycle(
+  state: GameState,
+  owner: PlayableFactionId,
+): number {
+  let facilities = 0
+
+  for (const territory of Object.values(state.territories)) {
+    if (territory.owner === owner) {
+      facilities += territory.industry.research
+    }
+  }
+
+  return facilities * 8
+}
+
+export function researchTechnology(
+  state: GameState,
+  owner: PlayableFactionId,
+  technology: TechnologyId,
+): GameState {
+  const currentLevel = state.technologies[owner][technology]
+  if (currentLevel >= TECHNOLOGY_MAX_LEVEL) return state
+
+  const cost = technologyCost(technology, currentLevel)
+  if (state.researchPoints[owner] < cost) return state
+
+  const next: GameState = {
+    ...state,
+    researchPoints: {
+      ...state.researchPoints,
+      [owner]: state.researchPoints[owner] - cost,
+    },
+    technologies: {
+      ...state.technologies,
+      [owner]: {
+        ...state.technologies[owner],
+        [technology]: currentLevel + 1,
+      },
+    },
+  }
+
+  if (owner !== 'player') return next
+
+  return withEvent(
+    next,
+    'system',
+    `${technologyLabels[technology]} 연구 완료 · Lv.${currentLevel + 1}`,
+  )
 }
 
 function normalizeTerritories(
@@ -1045,13 +1169,25 @@ function queueProductionForOwner(
   const territory = state.territories[territoryId]
   if (!territory || territory.owner !== owner) return state
   if (hasProductionAt(state, owner, territoryId)) return state
-  if (kind === 'factory' && territory.factories >= MAX_FACTORIES) return state
+
+  const industryKind = normalizedIndustryKind(kind)
+  if (
+    industryKind &&
+    territory.industry[industryKind] >= INDUSTRY_MAX[industryKind]
+  ) {
+    return state
+  }
   if (kind === 'defense' && territory.defense >= MAX_DEFENSE) return state
 
   const cost = productionCost(kind, territory)
   if (cost <= 0 || state.funds[owner] < cost) return state
 
-  const duration = productionDuration(kind, territory)
+  const duration = productionDurationForOwner(
+    state,
+    kind,
+    territory,
+    owner,
+  )
   const order: ProductionOrder = {
     id: `${owner}:${territoryId}:${kind}:${state.tick}:${state.productionQueue.length}`,
     owner,
@@ -1074,17 +1210,10 @@ function queueProductionForOwner(
 
   if (owner !== 'player') return next
 
-  const label =
-    kind === 'factory'
-      ? '산업 시설'
-      : kind === 'division'
-        ? '신규 사단'
-        : '방어 공사'
-
   return withEvent(
     next,
     'production',
-    `${territory.fullName} · ${label} 생산 시작 · ${duration}틱`,
+    `${territory.fullName} · ${productionKindLabel(kind)} 생산 시작 · ${duration}틱`,
   )
 }
 
@@ -1097,7 +1226,15 @@ export function queueProduction(
 }
 
 export function buildFactory(state: GameState, territoryId: string): GameState {
-  return queueProduction(state, territoryId, 'factory')
+  return queueProduction(state, territoryId, 'civilian')
+}
+
+export function buildIndustry(
+  state: GameState,
+  territoryId: string,
+  kind: IndustryType,
+): GameState {
+  return queueProduction(state, territoryId, kind)
 }
 
 export function buildDivision(state: GameState, territoryId: string): GameState {
@@ -1142,15 +1279,25 @@ function completeProduction(
   if (!territory || territory.owner !== order.owner) return state
 
   let next = state
+  const industryKind = normalizedIndustryKind(order.kind)
 
-  if (order.kind === 'factory') {
+  if (industryKind) {
+    const industry = {
+      ...territory.industry,
+      [industryKind]: Math.min(
+        INDUSTRY_MAX[industryKind],
+        territory.industry[industryKind] + 1,
+      ),
+    }
+
     next = {
       ...next,
       territories: {
         ...next.territories,
         [territory.id]: {
           ...territory,
-          factories: Math.min(MAX_FACTORIES, territory.factories + 1),
+          industry,
+          factories: industry.civilian,
         },
       },
     }
@@ -1189,14 +1336,11 @@ function completeProduction(
   }
 
   if (order.owner === 'player') {
-    const label =
-      order.kind === 'factory'
-        ? '산업 시설 완공'
-        : order.kind === 'division'
-          ? '신규 사단 배치'
-          : '방어 공사 완료'
-
-    next = withEvent(next, 'production', `${territory.fullName} · ${label}`)
+    next = withEvent(
+      next,
+      'production',
+      `${territory.fullName} · ${productionKindLabel(order.kind)} 완료`,
+    )
   }
 
   return next
