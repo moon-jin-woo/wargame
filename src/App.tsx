@@ -51,6 +51,9 @@ const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
 const DIVISION_ROUTE_SOURCE_ID = 'division-route'
 const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
+const DIVISION_SOURCE_ID = 'division-stacks'
+const DIVISION_COUNTER_LAYER_ID = 'division-counter'
+const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
 type MapMode = 'control' | 'supply' | 'industry'
 
 function territoryMapColor(
@@ -112,7 +115,6 @@ function App() {
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
   const previousBattleTerritories = useRef<Set<string>>(new Set())
-  const divisionMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -283,6 +285,81 @@ function App() {
         'line-width': 2.4,
         'line-opacity': 0.9,
         'line-dasharray': [2, 1.5],
+      },
+    })
+
+    map.addSource(DIVISION_SOURCE_ID, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_COUNTER_LAYER_ID,
+      type: 'circle',
+      source: DIVISION_SOURCE_ID,
+      paint: {
+        'circle-radius': [
+          'case',
+          ['boolean', ['get', 'selected'], false],
+          ['interpolate', ['linear'], ['zoom'], 5.4, 10, 9, 13, 13, 17],
+          ['interpolate', ['linear'], ['zoom'], 5.4, 8, 9, 11, 13, 15],
+        ],
+        'circle-color': ['get', 'color'],
+        'circle-opacity': 0.96,
+        'circle-stroke-color': [
+          'case',
+          ['boolean', ['get', 'fighting'], false],
+          '#f06f55',
+          ['boolean', ['get', 'selected'], false],
+          '#f1e2b3',
+          ['boolean', ['get', 'moving'], false],
+          '#cfb46d',
+          '#1a1c1c',
+        ],
+        'circle-stroke-width': [
+          'case',
+          ['boolean', ['get', 'selected'], false],
+          3,
+          2,
+        ],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_SOURCE_ID,
+      layout: {
+        'text-field': [
+          'format',
+          ['get', 'symbol'],
+          { 'font-scale': 0.82 },
+          '\n',
+          {},
+          ['to-string', ['get', 'count']],
+          { 'font-scale': 1.05 },
+        ],
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          5.4,
+          8,
+          9,
+          10,
+          13,
+          12,
+        ],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f6f2e6',
+        'text-halo-color': '#161818',
+        'text-halo-width': 1.1,
       },
     })
 
