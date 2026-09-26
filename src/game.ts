@@ -2299,17 +2299,90 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
     return state
   }
 
+  const available = owned.filter(
+    (territory) => !hasProductionAt(state, owner, territory.id),
+  )
+  if (available.length === 0) return state
+
+  const totals = owned.reduce(
+    (acc, territory) => {
+      acc.civilian += territory.industry.civilian
+      acc.military += territory.industry.military
+      acc.logistics += territory.industry.logistics
+      acc.infrastructure += territory.industry.infrastructure
+      acc.research += territory.industry.research
+      acc.supply += territory.supply
+      return acc
+    },
+    {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+      supply: 0,
+    },
+  )
+  const averageSupply = totals.supply / owned.length
+
+  const chooseIndustryTarget = (kind: IndustryType) =>
+    [...available]
+      .filter(
+        (territory) =>
+          territory.industry[kind] < INDUSTRY_MAX[kind],
+      )
+      .sort(
+        (a, b) =>
+          a.industry[kind] - b.industry[kind] ||
+          b.industry.infrastructure - a.industry.infrastructure ||
+          b.supply - a.supply ||
+          a.id.localeCompare(b.id),
+      )[0]
+
+  const desiredCivilian = Math.max(2, Math.ceil(owned.length / 5))
+  const desiredMilitary = Math.max(1, Math.ceil(owned.length / 7))
+  const desiredLogistics = Math.max(1, Math.ceil(owned.length / 10))
+  const desiredResearch = Math.max(1, Math.ceil(owned.length / 14))
+
+  const priority: IndustryType | null =
+    averageSupply < 58 || totals.logistics < desiredLogistics
+      ? 'logistics'
+      : totals.civilian < desiredCivilian
+        ? 'civilian'
+        : totals.military < desiredMilitary
+          ? 'military'
+          : totals.research < desiredResearch
+            ? 'research'
+            : totals.infrastructure < owned.length
+              ? 'infrastructure'
+              : null
+
+  if (priority) {
+    const target = chooseIndustryTarget(priority)
+    if (
+      target &&
+      state.funds[owner] >= INDUSTRY_COSTS[priority]
+    ) {
+      return queueProductionForOwner(
+        state,
+        target.id,
+        priority,
+        owner,
+      )
+    }
+  }
+
   const frontlines = owned.filter((territory) =>
     territory.neighbors.some(
       (id) => state.territories[id]?.owner !== owner,
     ),
   )
-
   const divisionTarget = [...(frontlines.length > 0 ? frontlines : owned)]
     .filter((territory) => !hasProductionAt(state, owner, territory.id))
     .sort(
       (a, b) =>
         a.divisions - b.divisions ||
+        b.industry.military - a.industry.military ||
         b.supply - a.supply ||
         a.id.localeCompare(b.id),
     )[0]
@@ -2321,29 +2394,6 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
       'division',
       owner,
     )
-  }
-
-  const totalFactories = owned.reduce(
-    (sum, territory) => sum + territory.factories,
-    0,
-  )
-  const desiredFactories = Math.max(2, Math.ceil(owned.length / 4))
-  const factoryTarget = [...owned]
-    .filter(
-      (territory) =>
-        territory.factories < MAX_FACTORIES &&
-        !hasProductionAt(state, owner, territory.id),
-    )
-    .sort(
-      (a, b) => a.factories - b.factories || a.id.localeCompare(b.id),
-    )[0]
-
-  if (
-    totalFactories < desiredFactories &&
-    factoryTarget &&
-    state.funds[owner] >= FACTORY_COST
-  ) {
-    return queueProductionForOwner(state, factoryTarget.id, 'factory', owner)
   }
 
   return state
@@ -2624,6 +2674,33 @@ function processArmyPlanning(state: GameState): GameState {
   return changed ? { ...state, armies } : state
 }
 
+function maybeAiResearch(
+  state: GameState,
+  owner: AiFactionId,
+): GameState {
+  const technologies = (
+    Object.keys(state.technologies[owner]) as TechnologyId[]
+  ).sort(
+    (a, b) =>
+      state.technologies[owner][a] -
+        state.technologies[owner][b] ||
+      technologyCost(a, state.technologies[owner][a]) -
+        technologyCost(b, state.technologies[owner][b]),
+  )
+
+  const candidate = technologies.find((technology) => {
+    const level = state.technologies[owner][technology]
+    return (
+      level < TECHNOLOGY_MAX_LEVEL &&
+      state.researchPoints[owner] >= technologyCost(technology, level)
+    )
+  })
+
+  return candidate
+    ? researchTechnology(state, owner, candidate)
+    : state
+}
+
 function applyIncome(state: GameState): GameState {
   const active: PlayableFactionId[] = [
     'player',
@@ -2631,22 +2708,27 @@ function applyIncome(state: GameState): GameState {
   ]
 
   const funds = { ...state.funds }
+  const researchPoints = { ...state.researchPoints }
+
   for (const owner of active) {
     funds[owner] += factionIncomePerCycle(state, owner)
+    researchPoints[owner] += factionResearchPerCycle(state, owner)
   }
 
-  let next: GameState = { ...state, funds }
+  let next: GameState = { ...state, funds, researchPoints }
   const playerIncome = factionIncomePerCycle(state, 'player')
+  const playerResearch = factionResearchPerCycle(state, 'player')
 
-  if (playerIncome > 0) {
+  if (playerIncome > 0 || playerResearch > 0) {
     next = withEvent(
       next,
       'economy',
-      `산업 수익 +${playerIncome} · 보유 자금 ${funds.player}`,
+      `산업 수익 +${playerIncome} · 연구 +${playerResearch} · 자금 ${funds.player}`,
     )
   }
 
   for (const owner of activeAiFactions(state.aiCount)) {
+    next = maybeAiResearch(next, owner)
     next = aiBuild(next, owner)
   }
 
