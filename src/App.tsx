@@ -1554,8 +1554,8 @@ function App() {
               <div>
                 <strong>2. 전투도 즉시 끝나지 않습니다</strong>
                 <span>
-                  내 행정동을 선택한 다음 인접한 다른 세력 영토를 클릭하면 전투가 시작됩니다.
-                  전선 패널에서 진행 게이지를 확인할 수 있습니다.
+                  먼저 사단 패널이나 지도 위 부대 카운터에서 사단을 선택합니다.
+                  그 다음 지도에서 목적지를 클릭하면 사단이 실제 경로를 따라 이동하며, 적 지역이면 전선에 도착한 뒤 전투를 시작합니다.
                 </span>
               </div>
               <div>
@@ -1569,7 +1569,7 @@ function App() {
                 <strong>4. 연결과 보급을 유지합니다</strong>
                 <span>
                   같은 세력 영토와 연결된 지역은 보급이 회복되고, 고립된 지역은 보급이 떨어집니다.
-                  인접 아군 지역으로 1개 사단을 재배치할 수도 있습니다.
+                  사단은 자기 영토를 따라 여러 행정동을 이동할 수 있으며, 이동 중에는 지도에 경로가 표시됩니다.
                 </span>
               </div>
               <div>
@@ -2140,7 +2140,7 @@ function App() {
                   >
                     <strong>사단 편성 대기열</strong>
                     <span>
-                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 사단 +1
+                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 새 사단이 해당 지역에 실제 배치
                     </span>
                   </button>
 
@@ -2166,6 +2166,56 @@ function App() {
                 </div>
               </div>
             )}
+
+            <div className="territory-unit-roster">
+              <div className="neighbor-heading">
+                <h3>주둔 사단</h3>
+                <span>{divisionsHere.length}개</span>
+              </div>
+              {divisionsHere.length === 0 ? (
+                <p className="panel-empty">이 지역에 배치된 사단이 없습니다.</p>
+              ) : (
+                <div className="territory-division-list">
+                  {divisionsHere.map((division) => (
+                    <button
+                      key={division.id}
+                      className={
+                        game.selectedDivisionId === division.id
+                          ? 'selected'
+                          : ''
+                      }
+                      disabled={division.owner !== 'player'}
+                      onClick={() => {
+                        if (division.owner === 'player') {
+                          selectDivision(division.id)
+                          setArmyOpen(true)
+                        }
+                      }}
+                    >
+                      <span
+                        className="mini-unit-counter"
+                        style={{
+                          borderColor: ownerColor(division.owner, game),
+                        }}
+                      >
+                        ◆
+                      </span>
+                      <div>
+                        <strong>{division.name || '이름 없는 사단'}</strong>
+                        <span>
+                          {division.commander || '지휘관 미지정'} ·{' '}
+                          {divisionStatusLabel(division)}
+                        </span>
+                      </div>
+                      <small>
+                        {Math.round(division.strength)} /{' '}
+                        {Math.round(division.organization)}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {regionalStats && (
               <div className="regional-stats">
@@ -2207,32 +2257,19 @@ function App() {
                     battle.fromId === neighbor.id ||
                     battle.toId === neighbor.id,
                 )
-                const canCapture =
+                const canOrder =
                   game.phase === 'running' &&
-                  selected.owner === 'player' &&
-                  neighbor.owner !== 'player' &&
-                  selected.divisions > 0 &&
-                  !selectedBattle &&
-                  !neighborBattle
-                const canSupport =
-                  game.phase === 'running' &&
-                  selected.owner === 'player' &&
-                  neighbor.owner === 'player' &&
-                  selected.divisions > 1 &&
-                  !selectedBattle &&
-                  !neighborBattle
+                  selectedDivision?.owner === 'player' &&
+                  selectedDivision.status === 'idle' &&
+                  selectedDivision.locationId !== neighbor.id
 
                 return (
                   <div key={neighbor.id} className="neighbor-item">
                     <button
-                      className={`neighbor-main ${canCapture ? 'capture' : ''} ${neighborBattle ? 'engaged' : ''}`}
+                      className={`neighbor-main ${canOrder ? 'capture' : ''} ${neighborBattle ? 'engaged' : ''}`}
                       onClick={() => {
-                        if (canCapture) {
-                          setGame((previous) =>
-                            previous
-                              ? captureTerritory(previous, selected.id, neighbor.id)
-                              : previous,
-                          )
+                        if (canOrder) {
+                          handleTerritoryCommand(neighbor.id)
                         } else {
                           setGame((previous) =>
                             previous
@@ -2247,27 +2284,13 @@ function App() {
                         {ownerName(neighbor.owner, game)} · 사단 {neighbor.divisions} · 방어 {neighbor.defense}
                         {neighborBattle
                           ? ' · 전투 중'
-                          : canCapture
-                            ? ' · 작전 개시'
+                          : canOrder
+                            ? neighbor.owner === 'player'
+                              ? ' · 선택 사단 이동'
+                              : ' · 선택 사단 공격'
                             : ''}
                       </small>
                     </button>
-
-                    {canSupport && (
-                      <button
-                        className="support-button"
-                        title="현재 지역에서 1개 사단을 인접 아군 영토로 이동"
-                        onClick={() =>
-                          setGame((previous) =>
-                            previous
-                              ? transferTroops(previous, selected.id, neighbor.id)
-                              : previous,
-                          )
-                        }
-                      >
-                        1사단 재배치
-                      </button>
-                    )}
                   </div>
                 )
               })}
