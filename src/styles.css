@@ -972,3 +972,30 @@ button {
 .map-panel .maplibregl-map {
   z-index: 1;
 }
+
+
+.territory-health {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  padding: 7px 10px;
+  border: 1px solid #344454;
+  border-radius: 8px;
+  background: rgba(9, 13, 18, 0.92);
+  color: #aebdca;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(10px);
+}
+
+.territory-health.ok {
+  border-color: #477457;
+  color: #a9d1b5;
+}
+
+.territory-health.checking {
+  border-color: #6d5a3f;
+  color: #d5ba8a;
+}
