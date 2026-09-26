@@ -1456,13 +1456,13 @@ function setDivision(
   state: GameState,
   division: DivisionUnit,
 ): GameState {
-  return syncTerritoryDivisionCounts({
+  return {
     ...state,
     divisionUnits: {
       ...state.divisionUnits,
       [division.id]: division,
     },
-  })
+  }
 }
 
 export function issueDivisionOrder(
@@ -1706,7 +1706,7 @@ export function cancelDivisionOrder(
   }
 
   return withEvent(
-    syncTerritoryDivisionCounts({ ...state, battles, divisionUnits }),
+    { ...state, battles, divisionUnits },
     'movement',
     `${division.name} · 명령 취소`,
   )
@@ -2705,7 +2705,7 @@ export function advanceTick(state: GameState): GameState {
     next = runAutoOffensive(next)
   }
 
-  return updatePhase(syncTerritoryDivisionCounts(next))
+  return updatePhase(next)
 }
 
 export function ownerCounts(state: GameState): Record<FactionId, number> {
