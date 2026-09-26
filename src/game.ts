@@ -1196,11 +1196,44 @@ function productionDurationForOwner(
     state.technologies[owner]?.constructionEngineering ?? 0
   const massProductionLevel =
     state.technologies[owner]?.massProduction ?? 0
-  const modifier =
+  const automationLevel =
+    state.technologies[owner]?.industrialAutomation ?? 0
+  const regionalPlanningLevel =
+    state.technologies[owner]?.regionalPlanning ?? 0
+  const civilEngineeringLevel =
+    state.technologies[owner]?.civilEngineering ?? 0
+  const nationalStrategy =
+    state.nationalStrategies[owner] ?? 'balancedDevelopment'
+
+  let modifier =
     kind === 'division'
-      ? 1 - industrialLevel * 0.035 - massProductionLevel * 0.08
-      : 1 - industrialLevel * 0.035 - constructionLevel * 0.065
-  return Math.max(4, Math.ceil(base * modifier))
+      ? 1 -
+        industrialLevel * 0.035 -
+        massProductionLevel * 0.08 -
+        automationLevel * 0.03
+      : 1 -
+        industrialLevel * 0.035 -
+        constructionLevel * 0.065 -
+        regionalPlanningLevel * 0.05
+
+  if (
+    kind === 'railway' ||
+    kind === 'infrastructure' ||
+    kind === 'defense'
+  ) {
+    modifier -= civilEngineeringLevel * 0.05
+  }
+
+  if (nationalStrategy === 'industrialPush') {
+    modifier -= 0.07
+  } else if (
+    nationalStrategy === 'railwayPriority' &&
+    kind === 'railway'
+  ) {
+    modifier -= 0.14
+  }
+
+  return Math.max(4, Math.ceil(base * Math.max(0.45, modifier)))
 }
 
 export function territoryMilitaryPower(
@@ -1238,7 +1271,13 @@ export function factionIncomePerCycle(
 
   const technologyLevel =
     state.technologies[owner]?.industrialMethods ?? 0
-  const modifier = 1 + technologyLevel * 0.08
+  const automationLevel =
+    state.technologies[owner]?.industrialAutomation ?? 0
+  const modifier =
+    (1 + technologyLevel * 0.08 + automationLevel * 0.06) *
+    nationalIncome[
+      state.nationalStrategies[owner] ?? 'balancedDevelopment'
+    ]
   const base =
     civilianIndustry * FACTORY_INCOME +
     Math.floor(urbanBonus * 1.5)
@@ -1258,7 +1297,13 @@ export function factionResearchPerCycle(
     }
   }
 
-  return facilities * 8
+  return Math.floor(
+    facilities *
+      8 *
+      nationalResearch[
+        state.nationalStrategies[owner] ?? 'balancedDevelopment'
+      ],
+  )
 }
 
 export function researchTechnology(
@@ -1881,6 +1926,8 @@ function movementTicks(
   target: TerritoryState,
   role: DivisionRole = 'line',
   strategy: StrategyDoctrine = 'balanced',
+  state?: GameState,
+  owner?: PlayableFactionId,
 ): number {
   const supplyPenalty = Math.round((100 - source.supply) / 35)
   const distancePenalty = Math.min(
@@ -1896,17 +1943,55 @@ function movementTicks(
     1 - source.industry.logistics * 0.035,
   )
   const railLevel = Math.min(source.railway, target.railway)
-  const railwayModifier = Math.max(0.72, 1 - railLevel * 0.085)
+  const networkScheduling =
+    state && owner
+      ? state.technologies[owner]?.networkScheduling ?? 0
+      : 0
+  const mobilityEngineering =
+    state && owner
+      ? state.technologies[owner]?.mobilityEngineering ?? 0
+      : 0
+  const rapidRedeployment =
+    state && owner
+      ? state.technologies[owner]?.rapidRedeployment ?? 0
+      : 0
+  const terrainAdaptation =
+    state && owner
+      ? state.technologies[owner]?.terrainAdaptation ?? 0
+      : 0
+  const nationalStrategy =
+    state && owner
+      ? state.nationalStrategies[owner] ?? 'balancedDevelopment'
+      : 'balancedDevelopment'
+
+  const railwayModifier = Math.max(
+    0.62,
+    1 - railLevel * (0.085 + networkScheduling * 0.012),
+  )
+  const roleModifier =
+    roleMoveMultiplier[role] *
+    (role === 'mobile'
+      ? Math.max(0.8, 1 - mobilityEngineering * 0.04)
+      : 1)
+  const terrainBase = terrainMove[target.terrain]
+  const terrainModifier =
+    1 + (terrainBase - 1) * Math.max(0.55, 1 - terrainAdaptation * 0.06)
+  const redeployModifier =
+    source.owner === target.owner
+      ? Math.max(0.82, 1 - rapidRedeployment * 0.04)
+      : 1
 
   return clamp(
     Math.ceil(
       (2 + supplyPenalty + distancePenalty) *
-        roleMoveMultiplier[role] *
-        terrainMove[target.terrain] *
+        roleModifier *
+        terrainModifier *
         infrastructureModifier *
         logisticsModifier *
         railwayModifier *
-        strategyMove[strategy],
+        redeployModifier *
+        strategyMove[strategy] *
+        nationalMove[nationalStrategy],
     ),
     1,
     10,
@@ -2022,7 +2107,7 @@ export function issueDivisionOrder(
   const firstStep = state.territories[path[0]]
   if (!firstStep) return state
 
-  const totalTicks = movementTicks(source, firstStep, division.role, divisionStrategy(state, division))
+  const totalTicks = movementTicks(source, firstStep, division.role, divisionStrategy(state, division), state, division.owner)
   const orderType =
     target.owner === division.owner ? 'move' : 'attack'
 
@@ -2125,7 +2210,7 @@ function startDivisionBattle(
   const defenders = defenderIdsAt(state, targetId, target.owner)
 
   if (defenders.length === 0 && target.defense === 0) {
-    const totalTicks = movementTicks(source, target, division.role, divisionStrategy(state, division))
+    const totalTicks = movementTicks(source, target, division.role, divisionStrategy(state, division), state, division.owner)
     const nextDivision: DivisionUnit = {
       ...division,
       entrenchment: 0,
@@ -2367,7 +2452,7 @@ function processMovement(state: GameState): GameState {
         continue
       }
 
-      const legTicks = movementTicks(nextStep, following, division.role, divisionStrategy(state, division))
+      const legTicks = movementTicks(nextStep, following, division.role, divisionStrategy(state, division), state, division.owner)
       nextOrder = {
         ...order,
         path: remainingPath,
@@ -3153,7 +3238,7 @@ function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
       )
 
     if (friendlyFront) {
-      const totalTicks = movementTicks(territory, friendlyFront, current.role, divisionStrategy(next, current))
+      const totalTicks = movementTicks(territory, friendlyFront, current.role, divisionStrategy(next, current), next, current.owner)
       next = setDivision(next, {
         ...current,
         status: 'moving',
