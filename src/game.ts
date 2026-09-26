@@ -928,6 +928,7 @@ export function productionKindLabel(kind: ProductionKind): string {
   const industryKind = normalizedIndustryKind(kind)
   if (industryKind) return industryLabels[industryKind]
   if (kind === 'division') return '사단 편성'
+  if (kind === 'railway') return '철도 확장'
   return '방어 공사'
 }
 
@@ -938,6 +939,7 @@ export function productionCost(
   const industryKind = normalizedIndustryKind(kind)
   if (industryKind) return INDUSTRY_COSTS[industryKind]
   if (kind === 'division') return DIVISION_COST
+  if (kind === 'railway') return RAILWAY_COST + territory.railway * 55
   return defenseUpgradeCost(territory.defense)
 }
 
@@ -962,6 +964,15 @@ export function productionDuration(
     )
   }
 
+  if (kind === 'railway') {
+    return Math.max(
+      6,
+      PRODUCTION_TICKS.railway +
+        territory.railway * 3 -
+        territory.industry.infrastructure * 1.5,
+    )
+  }
+
   const infrastructureReduction =
     territory.industry.infrastructure * 1.25
 
@@ -978,12 +989,17 @@ function productionDurationForOwner(
   owner: PlayableFactionId,
 ): number {
   const base = productionDuration(kind, territory)
-  const technologyLevel =
+  const industrialLevel =
     state.technologies[owner]?.industrialMethods ?? 0
-  return Math.max(
-    4,
-    Math.ceil(base * (1 - technologyLevel * 0.06)),
-  )
+  const constructionLevel =
+    state.technologies[owner]?.constructionEngineering ?? 0
+  const massProductionLevel =
+    state.technologies[owner]?.massProduction ?? 0
+  const modifier =
+    kind === 'division'
+      ? 1 - industrialLevel * 0.035 - massProductionLevel * 0.08
+      : 1 - industrialLevel * 0.035 - constructionLevel * 0.065
+  return Math.max(4, Math.ceil(base * modifier))
 }
 
 export function territoryMilitaryPower(
@@ -1049,8 +1065,14 @@ export function researchTechnology(
   owner: PlayableFactionId,
   technology: TechnologyId,
 ): GameState {
-  const currentLevel = state.technologies[owner][technology]
-  if (currentLevel >= TECHNOLOGY_MAX_LEVEL) return state
+  const currentLevel = state.technologies[owner][technology] ?? 0
+  const definition = technologyDefinitions[technology]
+  if (
+    currentLevel >= definition.maxLevel ||
+    !technologyAvailable(state, owner, technology)
+  ) {
+    return state
+  }
 
   const cost = technologyCost(technology, currentLevel)
   if (state.researchPoints[owner] < cost) return state
@@ -1117,6 +1139,9 @@ function normalizeTerritories(
           factories: industry.civilian,
           industry,
           terrain: territory.terrain ?? 'plains',
+          railway: Number.isFinite(territory.railway)
+            ? clamp(Math.floor(territory.railway), 0, MAX_RAILWAY)
+            : 0,
           divisions: 0,
           defense: Number.isFinite(territory.defense)
             ? Math.max(0, Math.floor(territory.defense))
@@ -1276,6 +1301,7 @@ function claimCluster(
               infrastructure: 1,
               research: 0,
             },
+      railway: index === 0 ? 2 : 1,
       divisions: 0,
       defense: index === 0 ? 1 : 0,
       supply: index === 0 ? 92 : 78,
@@ -1331,6 +1357,7 @@ export function startGame(state: GameState, startId: string): GameState {
           infrastructure: 0,
           research: 0,
         },
+        railway: 0,
         divisions: 0,
         defense: 0,
         supply: 55,
@@ -1457,6 +1484,7 @@ function queueProductionForOwner(
     return state
   }
   if (kind === 'defense' && territory.defense >= MAX_DEFENSE) return state
+  if (kind === 'railway' && territory.railway >= MAX_RAILWAY) return state
 
   const cost = productionCost(kind, territory)
   if (cost <= 0 || state.funds[owner] < cost) return state
@@ -1524,6 +1552,10 @@ export function upgradeDefense(state: GameState, territoryId: string): GameState
   return queueProduction(state, territoryId, 'defense')
 }
 
+export function buildRailway(state: GameState, territoryId: string): GameState {
+  return queueProduction(state, territoryId, 'railway')
+}
+
 export function cancelProduction(
   state: GameState,
   orderId: string,
@@ -1588,6 +1620,17 @@ function completeProduction(
         [territory.id]: {
           ...territory,
           defense: Math.min(MAX_DEFENSE, territory.defense + 1),
+        },
+      },
+    }
+  } else if (order.kind === 'railway') {
+    next = {
+      ...next,
+      territories: {
+        ...next.territories,
+        [territory.id]: {
+          ...territory,
+          railway: Math.min(MAX_RAILWAY, territory.railway + 1),
         },
       },
     }
