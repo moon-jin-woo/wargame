@@ -976,7 +976,13 @@ function App() {
         }
       })
 
-      if (owner === 'player') {
+      if (
+        owner === 'player' ||
+        owner === 'red' ||
+        owner === 'blue' ||
+        owner === 'green'
+      ) {
+        setHqFaction(owner as PlayableFactionId)
         setArmyOpen(true)
       }
     }
@@ -1931,13 +1937,93 @@ function App() {
           <section className="floating-panel army-panel">
             <div className="floating-panel-head">
               <div>
-                <p className="eyebrow">사단 지휘부</p>
-                <h2>배치 사단 {playerDivisionList.length}개</h2>
+                <p className="eyebrow">통합 지휘부</p>
+                <h2>
+                  {ownerName(hqFaction, game)} · {hqDivisionList.length}개 사단
+                </h2>
               </div>
               <button onClick={() => setArmyOpen(false)}>닫기</button>
             </div>
 
-            <div className="army-hq-section">
+            <div className="hq-faction-tabs">
+              {(
+                [
+                  'player',
+                  ...(['red', 'blue', 'green'] as AiFactionId[]).slice(
+                    0,
+                    game.aiCount,
+                  ),
+                ] as PlayableFactionId[]
+              ).map((owner) => (
+                <button
+                  key={owner}
+                  className={hqFaction === owner ? 'active' : ''}
+                  onClick={() => setHqFaction(owner)}
+                >
+                  <i style={{ background: ownerColor(owner, game) }} />
+                  {ownerName(owner, game)}
+                  <b>{armiesForOwner(game, owner).length}</b>
+                </button>
+              ))}
+            </div>
+
+            {hqFaction !== 'player' && (
+              <div className="foreign-hq-overview">
+                <div className="foreign-hq-summary">
+                  <span>열람 중</span>
+                  <strong>{ownerName(hqFaction, game)}</strong>
+                  <small>
+                    군단 {hqArmyList.length} · 사단 {hqDivisionList.length}
+                  </small>
+                </div>
+
+                <div className="foreign-corps-list">
+                  {hqArmyList.length === 0 ? (
+                    <p className="panel-empty">
+                      아직 편성된 군단 정보가 없습니다.
+                    </p>
+                  ) : (
+                    hqArmyList.map((army) => (
+                      <article key={army.id} className="foreign-corps-card">
+                        <header>
+                          <div>
+                            <strong>{army.name}</strong>
+                            <span>{army.commander || '지휘관 미지정'}</span>
+                          </div>
+                          <b>{strategyLabels[army.strategy]}</b>
+                        </header>
+                        <div className="foreign-corps-meta">
+                          <span>사단 {army.divisionIds.length}</span>
+                          <span>
+                            {army.planStatus === 'executing'
+                              ? '작전 실행'
+                              : army.planStatus === 'planning'
+                                ? '계획 수립'
+                                : '대기'}
+                          </span>
+                          <span>준비 {Math.round(army.preparation)}%</span>
+                        </div>
+                        <div className="foreign-corps-objective">
+                          <span>작전 목표</span>
+                          <strong>
+                            {army.objectiveId
+                              ? game.territories[army.objectiveId]?.fullName ??
+                                '정보 없음'
+                              : '미지정'}
+                          </strong>
+                        </div>
+                        <div className="army-preparation-track">
+                          <i style={{ width: `${army.preparation}%` }} />
+                        </div>
+                        <small>{strategyDescriptions[army.strategy]}</small>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className={`army-hq-section ${hqFaction === 'player' ? '' : 'hq-player-hidden'}`}>
               <div className="army-hq-title">
                 <div>
                   <span>군 본부</span>
@@ -2015,6 +2101,41 @@ function App() {
                       />
                     </label>
                   </div>
+
+                  <label className="army-strategy-field">
+                    <span>군단 전략</span>
+                    <select
+                      value={selectedArmy.strategy}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? setArmyStrategy(
+                                previous,
+                                selectedArmy.id,
+                                event.target.value as StrategyDoctrine,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      {(
+                        [
+                          'balanced',
+                          'maneuver',
+                          'concentrated',
+                          'defensive',
+                          'logistics',
+                        ] as StrategyDoctrine[]
+                      ).map((strategy) => (
+                        <option key={strategy} value={strategy}>
+                          {strategyLabels[strategy]}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      {strategyDescriptions[selectedArmy.strategy]}
+                    </small>
+                  </label>
 
                   <div className="army-plan-card">
                     <div className="army-plan-meta">
