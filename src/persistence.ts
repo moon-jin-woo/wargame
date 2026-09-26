@@ -12,8 +12,11 @@ import type {
   GamePhase,
   GameSpeed,
   GameState,
+  IndustryState,
   PlayableFactionId,
   ProductionOrder,
+  TechnologyId,
+  TerrainType,
 } from './types'
 
 const SAVE_KEY = 'wargame-save-v1'
@@ -22,18 +25,35 @@ const VALID_PLAYABLE = new Set<PlayableFactionId>(['player', 'red', 'blue', 'gre
 const VALID_PHASES = new Set<GamePhase>(['setup', 'running', 'victory', 'defeat'])
 const VALID_DIFFICULTIES = new Set<Difficulty>(['easy', 'normal', 'hard'])
 const VALID_STANCES = new Set<AttackStance>(['cautious', 'balanced', 'aggressive'])
+const VALID_TERRAINS = new Set<TerrainType>([
+  'urban',
+  'plains',
+  'hills',
+  'mountain',
+  'forest',
+  'coastal',
+  'island',
+])
+const TECHNOLOGIES: TechnologyId[] = [
+  'industrialMethods',
+  'logisticsPlanning',
+  'commandNetwork',
+  'fieldEngineering',
+]
 
 type SavedTerritory = {
   owner: FactionId
   troops?: number
   supply: number
   factories?: number
+  industry?: Partial<IndustryState>
+  terrain?: TerrainType
   divisions?: number
   defense?: number
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
   savedAt: number
   tick: number
   speed: GameSpeed
@@ -48,6 +68,11 @@ type SavedGame = {
   aiNames?: Record<AiFactionId, string>
   factionColors?: Record<PlayableFactionId, string>
   funds?: Record<PlayableFactionId, number>
+  researchPoints?: Record<PlayableFactionId, number>
+  technologies?: Record<
+    PlayableFactionId,
+    Record<TechnologyId, number>
+  >
   attackStance?: AttackStance
   autoOffensive?: boolean
   events?: GameEvent[]
@@ -86,6 +111,11 @@ function validProductionOrders(
         typeof candidate.territoryId === 'string' &&
         Boolean(territories[candidate.territoryId]) &&
         (candidate.kind === 'factory' ||
+          candidate.kind === 'civilian' ||
+          candidate.kind === 'military' ||
+          candidate.kind === 'logistics' ||
+          candidate.kind === 'infrastructure' ||
+          candidate.kind === 'research' ||
           candidate.kind === 'division' ||
           candidate.kind === 'defense') &&
         Number.isFinite(candidate.cost) &&
@@ -365,6 +395,8 @@ export function saveGame(state: GameState): number {
         troops: Math.round(territory.troops * 10) / 10,
         supply: Math.round(territory.supply * 10) / 10,
         factories: territory.factories,
+        industry: territory.industry,
+        terrain: territory.terrain,
         divisions: territory.divisions,
         defense: territory.defense,
       },
@@ -372,7 +404,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 8,
+    schema: 9,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -387,6 +419,8 @@ export function saveGame(state: GameState): number {
     aiNames: state.aiNames,
     factionColors: state.factionColors,
     funds: state.funds,
+    researchPoints: state.researchPoints,
+    technologies: state.technologies,
     attackStance: state.attackStance,
     autoOffensive: state.autoOffensive,
     events: state.events.slice(0, 80),
@@ -426,7 +460,8 @@ export function restoreGame(base: GameState): GameState | null {
         saved.schema !== 5 &&
         saved.schema !== 6 &&
         saved.schema !== 7 &&
-        saved.schema !== 8) ||
+        saved.schema !== 8 &&
+        saved.schema !== 9) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -448,9 +483,45 @@ export function restoreGame(base: GameState): GameState | null {
       const supply = Number.isFinite(dynamic.supply)
         ? clamp(Number(dynamic.supply), 0, 100)
         : current.supply
-      const factories = Number.isFinite(dynamic.factories)
-        ? clamp(Math.floor(Number(dynamic.factories)), 0, 4)
+      const legacyFactories = Number.isFinite(dynamic.factories)
+        ? clamp(Math.floor(Number(dynamic.factories)), 0, 6)
         : current.factories
+      const rawIndustry =
+        dynamic.industry && typeof dynamic.industry === 'object'
+          ? dynamic.industry
+          : null
+      const industry: IndustryState = {
+        civilian: clamp(
+          Math.floor(
+            Number(rawIndustry?.civilian ?? legacyFactories) || 0,
+          ),
+          0,
+          6,
+        ),
+        military: clamp(
+          Math.floor(Number(rawIndustry?.military ?? 0) || 0),
+          0,
+          6,
+        ),
+        logistics: clamp(
+          Math.floor(Number(rawIndustry?.logistics ?? 0) || 0),
+          0,
+          4,
+        ),
+        infrastructure: clamp(
+          Math.floor(Number(rawIndustry?.infrastructure ?? 0) || 0),
+          0,
+          5,
+        ),
+        research: clamp(
+          Math.floor(Number(rawIndustry?.research ?? 0) || 0),
+          0,
+          3,
+        ),
+      }
+      const terrain = VALID_TERRAINS.has(dynamic.terrain as TerrainType)
+        ? (dynamic.terrain as TerrainType)
+        : current.terrain
       const defense = Number.isFinite(dynamic.defense)
         ? clamp(Math.floor(Number(dynamic.defense)), 0, 4)
         : current.defense
@@ -460,14 +531,16 @@ export function restoreGame(base: GameState): GameState | null {
         owner,
         troops,
         supply,
-        factories,
+        factories: industry.civilian,
+        industry,
+        terrain,
         divisions: 0,
         defense,
       }
     }
 
     const divisionUnits =
-      saved.schema === 7 || saved.schema === 8
+      saved.schema === 7 || saved.schema === 8 || saved.schema === 9
         ? validDivisionUnits(saved.divisionUnits, territories)
         : migrateLegacyDivisionCounts(
             territories,
@@ -513,6 +586,28 @@ export function restoreGame(base: GameState): GameState | null {
       }
     }
 
+    const researchPoints = { ...base.researchPoints }
+    const technologies = {
+      player: { ...base.technologies.player },
+      red: { ...base.technologies.red },
+      blue: { ...base.technologies.blue },
+      green: { ...base.technologies.green },
+    }
+
+    for (const id of ['player', 'red', 'blue', 'green'] as PlayableFactionId[]) {
+      const points = saved.researchPoints?.[id]
+      if (typeof points === 'number' && Number.isFinite(points)) {
+        researchPoints[id] = clamp(Math.floor(points), 0, 999999)
+      }
+
+      for (const technology of TECHNOLOGIES) {
+        const level = saved.technologies?.[id]?.[technology]
+        if (typeof level === 'number' && Number.isFinite(level)) {
+          technologies[id][technology] = clamp(Math.floor(level), 0, 3)
+        }
+      }
+    }
+
     const attackStance = VALID_STANCES.has(saved.attackStance as AttackStance)
       ? (saved.attackStance as AttackStance)
       : base.attackStance
@@ -526,7 +621,7 @@ export function restoreGame(base: GameState): GameState | null {
           )?.id ?? null
 
     const armies =
-      saved.schema === 8
+      saved.schema === 8 || saved.schema === 9
         ? validArmies(saved.armies, territories, divisionUnits)
         : {}
 
@@ -565,6 +660,8 @@ export function restoreGame(base: GameState): GameState | null {
       aiNames,
       factionColors,
       funds,
+      researchPoints,
+      technologies,
       attackStance,
       autoOffensive:
         typeof saved.autoOffensive === 'boolean'
@@ -578,7 +675,7 @@ export function restoreGame(base: GameState): GameState | null {
         territories,
       ),
       battles:
-        saved.schema === 7 || saved.schema === 8
+        saved.schema === 7 || saved.schema === 8 || saved.schema === 9
           ? validBattles(saved.battles, territories, divisionUnits)
           : [],
       divisionUnits,

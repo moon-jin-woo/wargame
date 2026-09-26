@@ -45,6 +45,14 @@ function territory(
     troops: 0,
     supply: 80,
     factories: 0,
+    industry: {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    },
+    terrain: 'plains',
     divisions: 0,
     defense: 0,
     neighbors: [],
@@ -94,6 +102,18 @@ describe('division save migration', () => {
       tick: 5,
       selectedDivisionId: unit.id,
       selectedArmyId: 'army-test',
+      researchPoints: {
+        ...base.researchPoints,
+        player: 123,
+      },
+      technologies: {
+        ...base.technologies,
+        player: {
+          ...base.technologies.player,
+          industrialMethods: 1,
+          logisticsPlanning: 2,
+        },
+      },
       divisionUnits: { [unit.id]: unit },
       armies: {
         'army-test': {
@@ -110,7 +130,19 @@ describe('division save migration', () => {
       },
       territories: {
         ...base.territories,
-        a: { ...base.territories.a, divisions: 1 },
+        a: {
+          ...base.territories.a,
+          divisions: 1,
+          terrain: 'mountain' as const,
+          industry: {
+            civilian: 2,
+            military: 1,
+            logistics: 2,
+            infrastructure: 3,
+            research: 1,
+          },
+          factories: 2,
+        },
       },
     }
 
@@ -128,6 +160,12 @@ describe('division save migration', () => {
     expect(restored?.armies['army-test'].preparation).toBe(48)
     expect(restored?.selectedDivisionId).toBe(unit.id)
     expect(restored?.selectedArmyId).toBe('army-test')
+    expect(restored?.territories.a.terrain).toBe('mountain')
+    expect(restored?.territories.a.industry.logistics).toBe(2)
+    expect(restored?.territories.a.industry.infrastructure).toBe(3)
+    expect(restored?.researchPoints.player).toBe(123)
+    expect(restored?.technologies.player.industrialMethods).toBe(1)
+    expect(restored?.technologies.player.logisticsPlanning).toBe(2)
   })
 
   it('migrates legacy numeric division counts into real units', () => {
@@ -164,6 +202,9 @@ describe('division save migration', () => {
     expect(restored).not.toBeNull()
     expect(Object.keys(restored?.divisionUnits ?? {})).toHaveLength(3)
     expect(restored?.territories.a.divisions).toBe(3)
+    expect(restored?.territories.a.industry.civilian).toBe(1)
+    expect(restored?.territories.a.industry.military).toBe(0)
+    expect(restored?.territories.a.terrain).toBe('plains')
     expect(
       Object.values(restored?.divisionUnits ?? {}).every(
         (unit) =>

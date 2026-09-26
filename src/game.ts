@@ -11,9 +11,12 @@ import type {
   FactionId,
   GameEventKind,
   GameState,
+  IndustryType,
   PlayableFactionId,
   ProductionKind,
   ProductionOrder,
+  TechnologyId,
+  TerrainType,
   TerritoryState,
 } from './types'
 
@@ -41,13 +44,114 @@ export const FACTORY_COST = 120
 export const DIVISION_COST = 80
 export const FACTORY_INCOME = 12
 export const ECONOMY_INTERVAL = 5
-export const MAX_FACTORIES = 4
+export const MAX_FACTORIES = 6
 export const MAX_DEFENSE = 4
+
+export const industryLabels: Record<IndustryType, string> = {
+  civilian: '민수산업',
+  military: '군수산업',
+  logistics: '물류센터',
+  infrastructure: '인프라',
+  research: '연구시설',
+}
+
+export const INDUSTRY_COSTS: Record<IndustryType, number> = {
+  civilian: 120,
+  military: 140,
+  logistics: 110,
+  infrastructure: 90,
+  research: 180,
+}
+
+export const INDUSTRY_MAX: Record<IndustryType, number> = {
+  civilian: 6,
+  military: 6,
+  logistics: 4,
+  infrastructure: 5,
+  research: 3,
+}
 
 export const PRODUCTION_TICKS: Record<ProductionKind, number> = {
   factory: 30,
+  civilian: 30,
+  military: 34,
+  logistics: 24,
+  infrastructure: 20,
+  research: 40,
   division: 12,
   defense: 16,
+}
+
+export const terrainLabels: Record<TerrainType, string> = {
+  urban: '도시',
+  plains: '평야',
+  hills: '구릉',
+  mountain: '산악',
+  forest: '산림',
+  coastal: '해안',
+  island: '도서',
+}
+
+const terrainMove: Record<TerrainType, number> = {
+  urban: 1.1,
+  plains: 0.92,
+  hills: 1.14,
+  mountain: 1.42,
+  forest: 1.22,
+  coastal: 1.04,
+  island: 1.36,
+}
+
+const terrainAttack: Record<TerrainType, number> = {
+  urban: 0.9,
+  plains: 1.05,
+  hills: 0.94,
+  mountain: 0.82,
+  forest: 0.9,
+  coastal: 1,
+  island: 0.86,
+}
+
+const terrainDefense: Record<TerrainType, number> = {
+  urban: 1.18,
+  plains: 0.98,
+  hills: 1.08,
+  mountain: 1.24,
+  forest: 1.12,
+  coastal: 1.04,
+  island: 1.16,
+}
+
+const terrainSupply: Record<TerrainType, number> = {
+  urban: 1.08,
+  plains: 1.05,
+  hills: 0.96,
+  mountain: 0.8,
+  forest: 0.9,
+  coastal: 1,
+  island: 0.76,
+}
+
+export const technologyLabels: Record<TechnologyId, string> = {
+  industrialMethods: '산업 공정',
+  logisticsPlanning: '물류 계획',
+  commandNetwork: '지휘 통신',
+  fieldEngineering: '야전 공학',
+}
+
+export const TECHNOLOGY_MAX_LEVEL = 3
+
+export function technologyCost(
+  technology: TechnologyId,
+  level: number,
+): number {
+  const base: Record<TechnologyId, number> = {
+    industrialMethods: 90,
+    logisticsPlanning: 85,
+    commandNetwork: 95,
+    fieldEngineering: 80,
+  }
+  return base[technology] + level * 55
 }
 
 const STARTING_FUNDS = 320
@@ -524,11 +628,36 @@ export function defenseUpgradeCost(level: number): number {
   return 70 + level * 50
 }
 
+function isIndustryKind(kind: ProductionKind): kind is IndustryType {
+  return (
+    kind === 'civilian' ||
+    kind === 'military' ||
+    kind === 'logistics' ||
+    kind === 'infrastructure' ||
+    kind === 'research'
+  )
+}
+
+function normalizedIndustryKind(
+  kind: ProductionKind,
+): IndustryType | null {
+  if (kind === 'factory') return 'civilian'
+  return isIndustryKind(kind) ? kind : null
+}
+
+export function productionKindLabel(kind: ProductionKind): string {
+  const industryKind = normalizedIndustryKind(kind)
+  if (industryKind) return industryLabels[industryKind]
+  if (kind === 'division') return '사단 편성'
+  return '방어 공사'
+}
+
 export function productionCost(
   kind: ProductionKind,
   territory: TerritoryState,
 ): number {
-  if (kind === 'factory') return FACTORY_COST
+  const industryKind = normalizedIndustryKind(kind)
+  if (industryKind) return INDUSTRY_COSTS[industryKind]
   if (kind === 'division') return DIVISION_COST
   return defenseUpgradeCost(territory.defense)
 }
@@ -538,9 +667,44 @@ export function productionDuration(
   territory: TerritoryState,
 ): number {
   if (kind === 'defense') {
-    return PRODUCTION_TICKS.defense + territory.defense * 4
+    return Math.max(
+      6,
+      PRODUCTION_TICKS.defense +
+        territory.defense * 4 -
+        territory.industry.infrastructure * 2,
+    )
   }
-  return PRODUCTION_TICKS[kind]
+
+  if (kind === 'division') {
+    return Math.max(
+      5,
+      PRODUCTION_TICKS.division -
+        Math.min(5, territory.industry.military),
+    )
+  }
+
+  const infrastructureReduction =
+    territory.industry.infrastructure * 1.25
+
+  return Math.max(
+    6,
+    Math.ceil(PRODUCTION_TICKS[kind] - infrastructureReduction),
+  )
+}
+
+function productionDurationForOwner(
+  state: GameState,
+  kind: ProductionKind,
+  territory: TerritoryState,
+  owner: PlayableFactionId,
+): number {
+  const base = productionDuration(kind, territory)
+  const technologyLevel =
+    state.technologies[owner]?.industrialMethods ?? 0
+  return Math.max(
+    4,
+    Math.ceil(base * (1 - technologyLevel * 0.06)),
+  )
 }
 
 export function territoryMilitaryPower(
@@ -565,30 +729,122 @@ export function factionIncomePerCycle(
   state: GameState,
   owner: PlayableFactionId,
 ): number {
-  let factories = 0
+  let civilianIndustry = 0
+  let urbanBonus = 0
+
   for (const territory of Object.values(state.territories)) {
-    if (territory.owner === owner) factories += territory.factories
+    if (territory.owner !== owner) continue
+    civilianIndustry += territory.industry.civilian
+    if (territory.terrain === 'urban') {
+      urbanBonus += territory.industry.civilian
+    }
   }
-  return factories * FACTORY_INCOME
+
+  const technologyLevel =
+    state.technologies[owner]?.industrialMethods ?? 0
+  const modifier = 1 + technologyLevel * 0.08
+  const base =
+    civilianIndustry * FACTORY_INCOME +
+    Math.floor(urbanBonus * 1.5)
+
+  return Math.floor(base * modifier)
+}
+
+export function factionResearchPerCycle(
+  state: GameState,
+  owner: PlayableFactionId,
+): number {
+  let facilities = 0
+
+  for (const territory of Object.values(state.territories)) {
+    if (territory.owner === owner) {
+      facilities += territory.industry.research
+    }
+  }
+
+  return facilities * 8
+}
+
+export function researchTechnology(
+  state: GameState,
+  owner: PlayableFactionId,
+  technology: TechnologyId,
+): GameState {
+  const currentLevel = state.technologies[owner][technology]
+  if (currentLevel >= TECHNOLOGY_MAX_LEVEL) return state
+
+  const cost = technologyCost(technology, currentLevel)
+  if (state.researchPoints[owner] < cost) return state
+
+  const next: GameState = {
+    ...state,
+    researchPoints: {
+      ...state.researchPoints,
+      [owner]: state.researchPoints[owner] - cost,
+    },
+    technologies: {
+      ...state.technologies,
+      [owner]: {
+        ...state.technologies[owner],
+        [technology]: currentLevel + 1,
+      },
+    },
+  }
+
+  if (owner !== 'player') return next
+
+  return withEvent(
+    next,
+    'system',
+    `${technologyLabels[technology]} 연구 완료 · Lv.${currentLevel + 1}`,
+  )
 }
 
 function normalizeTerritories(
   territories: Record<string, TerritoryState>,
 ): Record<string, TerritoryState> {
   return Object.fromEntries(
-    Object.entries(territories).map(([id, territory]) => [
-      id,
-      {
-        ...territory,
-        factories: Number.isFinite(territory.factories)
-          ? Math.max(0, Math.floor(territory.factories))
-          : 0,
-        divisions: 0,
-        defense: Number.isFinite(territory.defense)
-          ? Math.max(0, Math.floor(territory.defense))
-          : 0,
-      },
-    ]),
+    Object.entries(territories).map(([id, territory]) => {
+      const legacyFactories = Number.isFinite(territory.factories)
+        ? Math.max(0, Math.floor(territory.factories))
+        : 0
+      const industry = {
+        civilian: Math.max(
+          0,
+          Math.floor(territory.industry?.civilian ?? legacyFactories),
+        ),
+        military: Math.max(
+          0,
+          Math.floor(territory.industry?.military ?? 0),
+        ),
+        logistics: Math.max(
+          0,
+          Math.floor(territory.industry?.logistics ?? 0),
+        ),
+        infrastructure: Math.max(
+          0,
+          Math.floor(territory.industry?.infrastructure ?? 0),
+        ),
+        research: Math.max(
+          0,
+          Math.floor(territory.industry?.research ?? 0),
+        ),
+      }
+
+      return [
+        id,
+        {
+          ...territory,
+          factories: industry.civilian,
+          industry,
+          terrain: territory.terrain ?? 'plains',
+          divisions: 0,
+          defense: Number.isFinite(territory.defense)
+            ? Math.max(0, Math.floor(territory.defense))
+            : 0,
+        },
+      ]
+    }),
   )
 }
 
@@ -624,6 +880,38 @@ export function createInitialState(
       red: STARTING_FUNDS,
       blue: STARTING_FUNDS,
       green: STARTING_FUNDS,
+    },
+    researchPoints: {
+      player: 0,
+      red: 0,
+      blue: 0,
+      green: 0,
+    },
+    technologies: {
+      player: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      red: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      blue: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      green: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
     },
     aiCount: 3,
     difficulty: 'normal',
@@ -693,6 +981,22 @@ function claimCluster(
       owner,
       troops: 0,
       factories: index === 0 ? 2 : 0,
+      industry:
+        index === 0
+          ? {
+              civilian: 2,
+              military: 1,
+              logistics: 1,
+              infrastructure: 2,
+              research: 0,
+            }
+          : {
+              civilian: 0,
+              military: 0,
+              logistics: 0,
+              infrastructure: 1,
+              research: 0,
+            },
       divisions: 0,
       defense: index === 0 ? 1 : 0,
       supply: index === 0 ? 92 : 78,
@@ -741,6 +1045,13 @@ export function startGame(state: GameState, startId: string): GameState {
         owner: 'neutral' as FactionId,
         troops: 0,
         factories: 0,
+        industry: {
+          civilian: 0,
+          military: 0,
+          logistics: 0,
+          infrastructure: 0,
+          research: 0,
+        },
         divisions: 0,
         defense: 0,
         supply: 55,
@@ -778,6 +1089,38 @@ export function startGame(state: GameState, startId: string): GameState {
       red: STARTING_FUNDS,
       blue: STARTING_FUNDS,
       green: STARTING_FUNDS,
+    },
+    researchPoints: {
+      player: 0,
+      red: 0,
+      blue: 0,
+      green: 0,
+    },
+    technologies: {
+      player: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      red: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      blue: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
+      green: {
+        industrialMethods: 0,
+        logisticsPlanning: 0,
+        commandNetwork: 0,
+        fieldEngineering: 0,
+      },
     },
     productionQueue: [],
     battles: [],
@@ -826,13 +1169,25 @@ function queueProductionForOwner(
   const territory = state.territories[territoryId]
   if (!territory || territory.owner !== owner) return state
   if (hasProductionAt(state, owner, territoryId)) return state
-  if (kind === 'factory' && territory.factories >= MAX_FACTORIES) return state
+
+  const industryKind = normalizedIndustryKind(kind)
+  if (
+    industryKind &&
+    territory.industry[industryKind] >= INDUSTRY_MAX[industryKind]
+  ) {
+    return state
+  }
   if (kind === 'defense' && territory.defense >= MAX_DEFENSE) return state
 
   const cost = productionCost(kind, territory)
   if (cost <= 0 || state.funds[owner] < cost) return state
 
-  const duration = productionDuration(kind, territory)
+  const duration = productionDurationForOwner(
+    state,
+    kind,
+    territory,
+    owner,
+  )
   const order: ProductionOrder = {
     id: `${owner}:${territoryId}:${kind}:${state.tick}:${state.productionQueue.length}`,
     owner,
@@ -855,17 +1210,10 @@ function queueProductionForOwner(
 
   if (owner !== 'player') return next
 
-  const label =
-    kind === 'factory'
-      ? '산업 시설'
-      : kind === 'division'
-        ? '신규 사단'
-        : '방어 공사'
-
   return withEvent(
     next,
     'production',
-    `${territory.fullName} · ${label} 생산 시작 · ${duration}틱`,
+    `${territory.fullName} · ${productionKindLabel(kind)} 생산 시작 · ${duration}틱`,
   )
 }
 
@@ -878,7 +1226,15 @@ export function queueProduction(
 }
 
 export function buildFactory(state: GameState, territoryId: string): GameState {
-  return queueProduction(state, territoryId, 'factory')
+  return queueProduction(state, territoryId, 'civilian')
+}
+
+export function buildIndustry(
+  state: GameState,
+  territoryId: string,
+  kind: IndustryType,
+): GameState {
+  return queueProduction(state, territoryId, kind)
 }
 
 export function buildDivision(state: GameState, territoryId: string): GameState {
@@ -923,15 +1279,25 @@ function completeProduction(
   if (!territory || territory.owner !== order.owner) return state
 
   let next = state
+  const industryKind = normalizedIndustryKind(order.kind)
 
-  if (order.kind === 'factory') {
+  if (industryKind) {
+    const industry = {
+      ...territory.industry,
+      [industryKind]: Math.min(
+        INDUSTRY_MAX[industryKind],
+        territory.industry[industryKind] + 1,
+      ),
+    }
+
     next = {
       ...next,
       territories: {
         ...next.territories,
         [territory.id]: {
           ...territory,
-          factories: Math.min(MAX_FACTORIES, territory.factories + 1),
+          industry,
+          factories: industry.civilian,
         },
       },
     }
@@ -970,14 +1336,11 @@ function completeProduction(
   }
 
   if (order.owner === 'player') {
-    const label =
-      order.kind === 'factory'
-        ? '산업 시설 완공'
-        : order.kind === 'division'
-          ? '신규 사단 배치'
-          : '방어 공사 완료'
-
-    next = withEvent(next, 'production', `${territory.fullName} · ${label}`)
+    next = withEvent(
+      next,
+      'production',
+      `${territory.fullName} · ${productionKindLabel(order.kind)} 완료`,
+    )
   }
 
   return next
@@ -1018,12 +1381,25 @@ function movementTicks(
     2,
     Math.floor(Math.sqrt(distanceSquared(source.centroid, target.centroid)) * 5),
   )
+  const infrastructureModifier = Math.max(
+    0.68,
+    1 - source.industry.infrastructure * 0.055,
+  )
+  const logisticsModifier = Math.max(
+    0.82,
+    1 - source.industry.logistics * 0.035,
+  )
+
   return clamp(
     Math.ceil(
-      (2 + supplyPenalty + distancePenalty) * roleMoveMultiplier[role],
+      (2 + supplyPenalty + distancePenalty) *
+        roleMoveMultiplier[role] *
+        terrainMove[target.terrain] *
+        infrastructureModifier *
+        logisticsModifier,
     ),
     1,
-    7,
+    10,
   )
 }
 
@@ -1093,13 +1469,13 @@ function setDivision(
   state: GameState,
   division: DivisionUnit,
 ): GameState {
-  return syncTerritoryDivisionCounts({
+  return {
     ...state,
     divisionUnits: {
       ...state.divisionUnits,
       [division.id]: division,
     },
-  })
+  }
 }
 
 export function issueDivisionOrder(
@@ -1343,7 +1719,7 @@ export function cancelDivisionOrder(
   }
 
   return withEvent(
-    syncTerritoryDivisionCounts({ ...state, battles, divisionUnits }),
+    { ...state, battles, divisionUnits },
     'movement',
     `${division.name} · 명령 취소`,
   )
@@ -1393,6 +1769,7 @@ function processMovement(state: GameState): GameState {
   let next = state
   let divisionUnits = { ...state.divisionUnits }
   let territories = state.territories
+  let positionChanged = false
   const captured: Array<{ territoryId: string; divisionId: string }> = []
   const battleStarts: Array<{
     divisionId: string
@@ -1497,6 +1874,7 @@ function processMovement(state: GameState): GameState {
       order: nextOrder,
       organization: Math.max(30, division.organization - 2.5),
     }
+    positionChanged = true
 
     if (nextStep.owner !== division.owner) {
       territories = {
@@ -1514,11 +1892,14 @@ function processMovement(state: GameState): GameState {
     }
   }
 
-  next = syncTerritoryDivisionCounts({
+  next = {
     ...next,
     divisionUnits,
     territories,
-  })
+  }
+  if (positionChanged) {
+    next = syncTerritoryDivisionCounts(next)
+  }
 
   for (const battle of battleStarts) {
     next = startDivisionBattle(
@@ -1690,6 +2071,13 @@ function processBattles(state: GameState): GameState {
         0,
       ) / Math.max(1, attackers.length)
 
+    const attackerLogisticsTech =
+      next.technologies[battle.attacker]?.logisticsPlanning ?? 0
+    const defenderEngineeringTech =
+      target.owner === 'neutral'
+        ? 0
+        : next.technologies[target.owner]?.fieldEngineering ?? 0
+
     const attackerPower =
       attackers.reduce(
         (sum, division) =>
@@ -1699,10 +2087,12 @@ function processBattles(state: GameState): GameState {
         0,
       ) *
       (0.62 + averageAttackerSupply / 210) *
-      stancePower[battle.stance]
+      stancePower[battle.stance] *
+      terrainAttack[target.terrain] *
+      (1 + attackerLogisticsTech * 0.025)
 
     const defenderPower =
-      defenders.reduce(
+      (defenders.reduce(
         (sum, division) =>
           sum +
           divisionCombatPower(division, true) *
@@ -1710,8 +2100,10 @@ function processBattles(state: GameState): GameState {
         0,
       ) *
         (0.68 + target.supply / 220) +
-      target.defense * DEFENSE_POWER +
-      (target.owner === 'neutral' ? 20 : 35)
+        target.defense * DEFENSE_POWER +
+        (target.owner === 'neutral' ? 20 : 35)) *
+      terrainDefense[target.terrain] *
+      (1 + defenderEngineeringTech * 0.045)
 
     const ratio = attackerPower / Math.max(45, defenderPower)
     const jitter =
@@ -1912,17 +2304,90 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
     return state
   }
 
+  const available = owned.filter(
+    (territory) => !hasProductionAt(state, owner, territory.id),
+  )
+  if (available.length === 0) return state
+
+  const totals = owned.reduce(
+    (acc, territory) => {
+      acc.civilian += territory.industry.civilian
+      acc.military += territory.industry.military
+      acc.logistics += territory.industry.logistics
+      acc.infrastructure += territory.industry.infrastructure
+      acc.research += territory.industry.research
+      acc.supply += territory.supply
+      return acc
+    },
+    {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+      supply: 0,
+    },
+  )
+  const averageSupply = totals.supply / owned.length
+
+  const chooseIndustryTarget = (kind: IndustryType) =>
+    [...available]
+      .filter(
+        (territory) =>
+          territory.industry[kind] < INDUSTRY_MAX[kind],
+      )
+      .sort(
+        (a, b) =>
+          a.industry[kind] - b.industry[kind] ||
+          b.industry.infrastructure - a.industry.infrastructure ||
+          b.supply - a.supply ||
+          a.id.localeCompare(b.id),
+      )[0]
+
+  const desiredCivilian = Math.max(2, Math.ceil(owned.length / 5))
+  const desiredMilitary = Math.max(1, Math.ceil(owned.length / 7))
+  const desiredLogistics = Math.max(1, Math.ceil(owned.length / 10))
+  const desiredResearch = Math.max(1, Math.ceil(owned.length / 14))
+
+  const priority: IndustryType | null =
+    averageSupply < 58 || totals.logistics < desiredLogistics
+      ? 'logistics'
+      : totals.civilian < desiredCivilian
+        ? 'civilian'
+        : totals.military < desiredMilitary
+          ? 'military'
+          : totals.research < desiredResearch
+            ? 'research'
+            : totals.infrastructure < owned.length
+              ? 'infrastructure'
+              : null
+
+  if (priority) {
+    const target = chooseIndustryTarget(priority)
+    if (
+      target &&
+      state.funds[owner] >= INDUSTRY_COSTS[priority]
+    ) {
+      return queueProductionForOwner(
+        state,
+        target.id,
+        priority,
+        owner,
+      )
+    }
+  }
+
   const frontlines = owned.filter((territory) =>
     territory.neighbors.some(
       (id) => state.territories[id]?.owner !== owner,
     ),
   )
-
   const divisionTarget = [...(frontlines.length > 0 ? frontlines : owned)]
     .filter((territory) => !hasProductionAt(state, owner, territory.id))
     .sort(
       (a, b) =>
         a.divisions - b.divisions ||
+        b.industry.military - a.industry.military ||
         b.supply - a.supply ||
         a.id.localeCompare(b.id),
     )[0]
@@ -1934,29 +2399,6 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
       'division',
       owner,
     )
-  }
-
-  const totalFactories = owned.reduce(
-    (sum, territory) => sum + territory.factories,
-    0,
-  )
-  const desiredFactories = Math.max(2, Math.ceil(owned.length / 4))
-  const factoryTarget = [...owned]
-    .filter(
-      (territory) =>
-        territory.factories < MAX_FACTORIES &&
-        !hasProductionAt(state, owner, territory.id),
-    )
-    .sort(
-      (a, b) => a.factories - b.factories || a.id.localeCompare(b.id),
-    )[0]
-
-  if (
-    totalFactories < desiredFactories &&
-    factoryTarget &&
-    state.funds[owner] >= FACTORY_COST
-  ) {
-    return queueProductionForOwner(state, factoryTarget.id, 'factory', owner)
   }
 
   return state
@@ -2120,12 +2562,22 @@ function recoverDivisions(state: GameState): GameState {
       100,
       division.organization + (territory.supply >= 55 ? 2.2 : 0.6),
     )
+    const militaryCapacity = territory.industry.military
     const strength = Math.min(
       100,
-      division.strength + (territory.supply >= 70 ? 0.35 : 0.08),
+      division.strength +
+        (territory.supply >= 70 ? 0.25 : 0.05) +
+        militaryCapacity * 0.08,
     )
+    const engineeringLevel =
+      state.technologies[division.owner]?.fieldEngineering ?? 0
     const entrenchGain =
-      division.role === 'guard' ? 4 : division.role === 'mobile' ? 1.8 : 3
+      (division.role === 'guard'
+        ? 4
+        : division.role === 'mobile'
+          ? 1.8
+          : 3) *
+      (1 + engineeringLevel * 0.1)
     const entrenchment = Math.min(
       100,
       division.entrenchment + entrenchGain,
@@ -2190,9 +2642,14 @@ function processArmyPlanning(state: GameState): GameState {
             ) /
             assigned.length /
             100
+      const commandLevel =
+        state.technologies[army.owner]?.commandNetwork ?? 0
       preparation = Math.min(
         100,
-        preparation + 1.2 + readiness * 1.8,
+        preparation +
+          1.2 +
+          readiness * 1.8 +
+          commandLevel * 0.45,
       )
     } else if (planStatus === 'executing') {
       preparation = Math.max(0, preparation - 1.5)
@@ -2222,6 +2679,33 @@ function processArmyPlanning(state: GameState): GameState {
   return changed ? { ...state, armies } : state
 }
 
+function maybeAiResearch(
+  state: GameState,
+  owner: AiFactionId,
+): GameState {
+  const technologies = (
+    Object.keys(state.technologies[owner]) as TechnologyId[]
+  ).sort(
+    (a, b) =>
+      state.technologies[owner][a] -
+        state.technologies[owner][b] ||
+      technologyCost(a, state.technologies[owner][a]) -
+        technologyCost(b, state.technologies[owner][b]),
+  )
+
+  const candidate = technologies.find((technology) => {
+    const level = state.technologies[owner][technology]
+    return (
+      level < TECHNOLOGY_MAX_LEVEL &&
+      state.researchPoints[owner] >= technologyCost(technology, level)
+    )
+  })
+
+  return candidate
+    ? researchTechnology(state, owner, candidate)
+    : state
+}
+
 function applyIncome(state: GameState): GameState {
   const active: PlayableFactionId[] = [
     'player',
@@ -2229,22 +2713,27 @@ function applyIncome(state: GameState): GameState {
   ]
 
   const funds = { ...state.funds }
+  const researchPoints = { ...state.researchPoints }
+
   for (const owner of active) {
     funds[owner] += factionIncomePerCycle(state, owner)
+    researchPoints[owner] += factionResearchPerCycle(state, owner)
   }
 
-  let next: GameState = { ...state, funds }
+  let next: GameState = { ...state, funds, researchPoints }
   const playerIncome = factionIncomePerCycle(state, 'player')
+  const playerResearch = factionResearchPerCycle(state, 'player')
 
-  if (playerIncome > 0) {
+  if (playerIncome > 0 || playerResearch > 0) {
     next = withEvent(
       next,
       'economy',
-      `산업 수익 +${playerIncome} · 보유 자금 ${funds.player}`,
+      `산업 수익 +${playerIncome} · 연구 +${playerResearch} · 자금 ${funds.player}`,
     )
   }
 
   for (const owner of activeAiFactions(state.aiCount)) {
+    next = maybeAiResearch(next, owner)
     next = aiBuild(next, owner)
   }
 
@@ -2287,23 +2776,44 @@ export function advanceTick(state: GameState): GameState {
   let territories = state.territories
 
   if (nextTick % 4 === 0) {
-    territories = { ...territories }
+    let updated: Record<string, TerritoryState> | null = null
 
     for (const [id, territory] of Object.entries(territories)) {
       if (territory.owner === 'neutral') continue
 
+      const owner = territory.owner as PlayableFactionId
       const connected = territory.neighbors.some(
         (neighborId) =>
           territories[neighborId]?.owner === territory.owner,
       )
+      const logisticsLevel = territory.industry.logistics
+      const infrastructureLevel = territory.industry.infrastructure
+      const technologyLevel =
+        state.technologies[owner]?.logisticsPlanning ?? 0
 
-      territories[id] = {
-        ...territory,
-        supply: connected
-          ? Math.min(100, territory.supply + 1.2)
-          : Math.max(0, territory.supply - 3),
-      }
+      const supplyDelta = connected
+        ? (0.65 +
+            logisticsLevel * 0.72 +
+            infrastructureLevel * 0.28 +
+            technologyLevel * 0.3) *
+          terrainSupply[territory.terrain]
+        : -Math.max(
+            0.75,
+            (3.2 -
+              logisticsLevel * 0.42 -
+              infrastructureLevel * 0.18 -
+              technologyLevel * 0.16) /
+              Math.max(0.65, terrainSupply[territory.terrain]),
+          )
+
+      const supply = clamp(territory.supply + supplyDelta, 0, 100)
+      if (Math.abs(supply - territory.supply) < 0.001) continue
+
+      if (!updated) updated = { ...territories }
+      updated[id] = { ...territory, supply }
     }
+
+    if (updated) territories = updated
   }
 
   let next: GameState = {
@@ -2342,7 +2852,7 @@ export function advanceTick(state: GameState): GameState {
     next = runAutoOffensive(next)
   }
 
-  return updatePhase(syncTerritoryDivisionCounts(next))
+  return updatePhase(next)
 }
 
 export function ownerCounts(state: GameState): Record<FactionId, number> {

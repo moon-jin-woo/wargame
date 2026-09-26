@@ -5,7 +5,7 @@ import {
   advanceTick,
   attackStanceLabels,
   buildDivision,
-  buildFactory,
+  buildIndustry,
   cancelDivisionOrder,
   cancelProduction,
   createArmy,
@@ -14,14 +14,17 @@ import {
   difficultyLabels,
   DIVISION_COST,
   ECONOMY_INTERVAL,
-  FACTORY_COST,
   FACTORY_INCOME,
   divisionsAt,
+  factionResearchPerCycle,
   divisionRoleLabels,
   executeArmyPlan,
   factionIncomePerCycle,
   factions,
   haltArmyPlan,
+  INDUSTRY_COSTS,
+  INDUSTRY_MAX,
+  industryLabels,
   issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
@@ -29,6 +32,7 @@ import {
   playerArmies,
   playerDivisions,
   productionDuration,
+  productionKindLabel,
   renameArmy,
   renameArmyCommander,
   renameCommander,
@@ -37,6 +41,11 @@ import {
   setDivisionRole,
   assignDivisionToArmy,
   startGame,
+  researchTechnology,
+  technologyCost,
+  technologyLabels,
+  TECHNOLOGY_MAX_LEVEL,
+  terrainLabels,
   territoryMilitaryPower,
   upgradeDefense,
 } from './game'
@@ -53,7 +62,9 @@ import type {
   FactionId,
   GameSpeed,
   GameState,
+  IndustryType,
   ProductionKind,
+  TechnologyId,
   TerritoryState,
 } from './types'
 
@@ -65,7 +76,32 @@ const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
-type MapMode = 'control' | 'supply' | 'industry'
+type MapMode = 'control' | 'supply' | 'industry' | 'terrain'
+
+const INDUSTRY_TYPES: IndustryType[] = [
+  'civilian',
+  'military',
+  'logistics',
+  'infrastructure',
+  'research',
+]
+
+const TECHNOLOGY_TYPES: TechnologyId[] = [
+  'industrialMethods',
+  'logisticsPlanning',
+  'commandNetwork',
+  'fieldEngineering',
+]
+
+const TERRAIN_COLORS: Record<TerritoryState['terrain'], string> = {
+  urban: '#7f7067',
+  plains: '#71835f',
+  hills: '#8b7b59',
+  mountain: '#696d70',
+  forest: '#506b54',
+  coastal: '#66808a',
+  island: '#6d718d',
+}
 
 function territoryMapColor(
   territory: TerritoryState,
@@ -81,10 +117,22 @@ function territoryMapColor(
     return '#70433f'
   }
 
-  if (territory.factories >= 4) return '#d0b46e'
-  if (territory.factories === 3) return '#aa915d'
-  if (territory.factories === 2) return '#81724f'
-  if (territory.factories === 1) return '#5e5947'
+  if (mode === 'terrain') {
+    return TERRAIN_COLORS[territory.terrain]
+  }
+
+  const industryLevel =
+    territory.industry.civilian +
+    territory.industry.military +
+    territory.industry.logistics +
+    territory.industry.infrastructure +
+    territory.industry.research
+
+  if (industryLevel >= 10) return '#d6b96f'
+  if (industryLevel >= 7) return '#b29a62'
+  if (industryLevel >= 4) return '#877a57'
+  if (industryLevel >= 2) return '#625f4d'
+  if (industryLevel >= 1) return '#4b4f45'
   return '#343a3a'
 }
 
@@ -94,10 +142,25 @@ function formatStrategicTime(tick: number): string {
   return `DAY ${String(day).padStart(3, '0')} · ${String(hour).padStart(2, '0')}:00`
 }
 
-function productionLabel(kind: ProductionKind): string {
-  if (kind === 'factory') return '산업 시설'
-  if (kind === 'division') return '사단 편성'
-  return '방어 공사'
+function industryDescription(kind: IndustryType): string {
+  if (kind === 'civilian') return '자금 수익 증가'
+  if (kind === 'military') return '사단 편성·회복 가속'
+  if (kind === 'logistics') return '지역 보급 회복 증가'
+  if (kind === 'infrastructure') return '건설·이동 시간 감소'
+  return '연구점수 생산'
+}
+
+function technologyDescription(technology: TechnologyId): string {
+  if (technology === 'industrialMethods') {
+    return '산업 수익과 건설 속도 향상'
+  }
+  if (technology === 'logisticsPlanning') {
+    return '보급 회복과 고립 완화'
+  }
+  if (technology === 'commandNetwork') {
+    return '군 작전 준비도 축적 가속'
+  }
+  return '방어·참호화 효율 향상'
 }
 
 function divisionStatusLabel(division: DivisionUnit): string {
@@ -140,6 +203,7 @@ function App() {
   const [speedOpen, setSpeedOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(true)
   const [productionOpen, setProductionOpen] = useState(false)
+  const [researchOpen, setResearchOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
   const [objectiveMode, setObjectiveMode] = useState(false)
@@ -454,12 +518,20 @@ function App() {
 
     for (const [id, territory] of Object.entries(game.territories)) {
       const visualColor = territoryMapColor(territory, game, mapMode)
+      const industryKey =
+        territory.industry.civilian +
+        territory.industry.military * 2 +
+        territory.industry.logistics * 3 +
+        territory.industry.infrastructure * 5 +
+        territory.industry.research * 7
       const ownerKey =
         mapMode === 'control'
           ? `${territory.owner}|${visualColor}`
           : mapMode === 'supply'
             ? `${mapMode}|${Math.round(territory.supply / 5)}|${visualColor}`
-            : `${mapMode}|${territory.factories}|${visualColor}`
+            : mapMode === 'terrain'
+              ? `${mapMode}|${territory.terrain}|${visualColor}`
+              : `${mapMode}|${industryKey}|${visualColor}`
 
       if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
@@ -965,17 +1037,26 @@ function App() {
     if (!game || !counts || total === 0) return null
 
     let playerDivisions = 0
-    let playerFactories = 0
     let playerMilitaryPower = 0
     let playerSupply = 0
     let playerFrontlines = 0
+    const industry = {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    }
 
     for (const territory of Object.values(game.territories)) {
       if (territory.owner !== 'player') continue
       playerDivisions += territory.divisions
-      playerFactories += territory.factories
       playerMilitaryPower += territoryMilitaryPower(territory, game)
       playerSupply += territory.supply
+
+      for (const kind of INDUSTRY_TYPES) {
+        industry[kind] += territory.industry[kind]
+      }
 
       if (
         territory.neighbors.some(
@@ -987,18 +1068,26 @@ function App() {
     }
 
     const playerOwned = counts.player
+    const industryTotal = INDUSTRY_TYPES.reduce(
+      (sum, kind) => sum + industry[kind],
+      0,
+    )
+
     return {
       playerOwned,
       share: (playerOwned / total) * 100,
       playerDivisions,
-      playerFactories,
+      playerFactories: industry.civilian + industry.military,
+      playerIndustryTotal: industryTotal,
+      industry,
       playerMilitaryPower,
       income: factionIncomePerCycle(game, 'player'),
+      researchIncome: factionResearchPerCycle(game, 'player'),
       averageSupply:
         playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
       playerFrontlines,
     }
-  }, [game?.territories, counts, total])
+  }, [game?.territories, game?.technologies, counts, total])
 
   const playerQueue = useMemo(
     () => game?.productionQueue.filter((order) => order.owner === 'player') ?? [],
@@ -1340,19 +1429,21 @@ function App() {
               <div>
                 <span>자금</span>
                 <strong>{game.funds.player.toLocaleString()}</strong>
+                <small>+{nationalStats.income}/{ECONOMY_INTERVAL}T</small>
               </div>
               <div>
                 <span>산업</span>
-                <strong>{nationalStats.playerFactories}</strong>
-                <small>+{nationalStats.income}/{ECONOMY_INTERVAL}T</small>
+                <strong>{nationalStats.playerIndustryTotal}</strong>
+                <small>민 {nationalStats.industry.civilian} · 군 {nationalStats.industry.military}</small>
+              </div>
+              <div>
+                <span>연구</span>
+                <strong>{game.researchPoints.player.toLocaleString()}</strong>
+                <small>+{nationalStats.researchIncome}/{ECONOMY_INTERVAL}T</small>
               </div>
               <div>
                 <span>사단</span>
                 <strong>{nationalStats.playerDivisions}</strong>
-              </div>
-              <div>
-                <span>생산</span>
-                <strong>{playerQueue.length}</strong>
               </div>
               <div>
                 <span>군</span>
@@ -1433,6 +1524,17 @@ function App() {
               <span>활성 대기열 {playerQueue.length}</span>
             </div>
 
+            {nationalStats && (
+              <div className="industry-overview">
+                {INDUSTRY_TYPES.map((kind) => (
+                  <div key={kind}>
+                    <span>{industryLabels[kind]}</span>
+                    <strong>{nationalStats.industry[kind]}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="production-list">
               {playerQueue.length === 0 ? (
                 <p className="panel-empty">
@@ -1450,7 +1552,7 @@ function App() {
                     <div key={order.id} className="production-row">
                       <div className="production-row-top">
                         <div>
-                          <strong>{productionLabel(order.kind)}</strong>
+                          <strong>{productionKindLabel(order.kind)}</strong>
                           <span>{territory?.name ?? '지역 없음'}</span>
                         </div>
                         <button
@@ -1473,6 +1575,82 @@ function App() {
                   )
                 })
               )}
+            </div>
+          </section>
+        )}
+
+        {game?.phase === 'running' && researchOpen && (
+          <section className="floating-panel research-panel">
+            <div className="floating-panel-head">
+              <div>
+                <p className="eyebrow">국가 연구</p>
+                <h2>연구 / 체계 개선</h2>
+              </div>
+              <button onClick={() => setResearchOpen(false)}>닫기</button>
+            </div>
+
+            <div className="research-summary">
+              <div>
+                <span>연구점수</span>
+                <strong>{game.researchPoints.player.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>주기 수입</span>
+                <strong>
+                  +{nationalStats?.researchIncome ?? 0} / {ECONOMY_INTERVAL}틱
+                </strong>
+              </div>
+            </div>
+
+            <div className="technology-list">
+              {TECHNOLOGY_TYPES.map((technology) => {
+                const level = game.technologies.player[technology]
+                const maxed = level >= TECHNOLOGY_MAX_LEVEL
+                const cost = maxed
+                  ? 0
+                  : technologyCost(technology, level)
+
+                return (
+                  <div key={technology} className="technology-row">
+                    <div className="technology-row-head">
+                      <div>
+                        <strong>{technologyLabels[technology]}</strong>
+                        <span>{technologyDescription(technology)}</span>
+                      </div>
+                      <b>Lv.{level}</b>
+                    </div>
+                    <div className="technology-pips">
+                      {Array.from({ length: TECHNOLOGY_MAX_LEVEL }).map(
+                        (_, index) => (
+                          <i
+                            key={index}
+                            className={index < level ? 'active' : ''}
+                          />
+                        ),
+                      )}
+                    </div>
+                    <button
+                      disabled={
+                        maxed ||
+                        game.researchPoints.player < cost
+                      }
+                      onClick={() =>
+                        setGame((previous) =>
+                          previous
+                            ? researchTechnology(
+                                previous,
+                                'player',
+                                technology,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      {maxed ? '최대 단계' : `연구 ${cost}점`}
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </section>
         )}
@@ -2053,11 +2231,19 @@ function App() {
 
         {game && mapMode !== 'control' && (
           <div className="map-mode-legend">
-            <strong>{mapMode === 'supply' ? '보급 지도' : '산업 지도'}</strong>
+            <strong>
+              {mapMode === 'supply'
+                ? '보급 지도'
+                : mapMode === 'industry'
+                  ? '산업 지도'
+                  : '근사 지형 지도'}
+            </strong>
             <span>
               {mapMode === 'supply'
                 ? '초록 = 안정 · 황색 = 주의 · 적갈색 = 취약'
-                : '밝을수록 산업 시설이 많음'}
+                : mapMode === 'industry'
+                  ? '밝을수록 산업·인프라 시설 총량이 많음'
+                  : '도시·평야·구릉·산악·산림·해안·도서의 게임용 근사 분류'}
             </span>
           </div>
         )}
@@ -2086,6 +2272,13 @@ function App() {
             {playerQueue.length > 0 && <b>{playerQueue.length}</b>}
           </button>
           <button
+            className={researchOpen ? 'active' : ''}
+            disabled={game?.phase !== 'running'}
+            onClick={() => setResearchOpen((open) => !open)}
+          >
+            연구
+          </button>
+          <button
             className={frontOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setFrontOpen((open) => !open)}
@@ -2108,11 +2301,20 @@ function App() {
                   ? 'supply'
                   : mode === 'supply'
                     ? 'industry'
-                    : 'control',
+                    : mode === 'industry'
+                      ? 'terrain'
+                      : 'control',
               )
             }
           >
-            지도 {mapMode === 'control' ? '영토' : mapMode === 'supply' ? '보급' : '산업'}
+            지도{' '}
+            {mapMode === 'control'
+              ? '영토'
+              : mapMode === 'supply'
+                ? '보급'
+                : mapMode === 'industry'
+                  ? '산업'
+                  : '지형'}
           </button>
           <button
             className={rulesOpen ? 'active' : ''}
@@ -2171,16 +2373,16 @@ function App() {
               <strong>{game.funds.player.toLocaleString()}</strong>
             </div>
             <div>
-              <span>공장 수익</span>
+              <span>산업 수익</span>
               <strong>+{nationalStats.income.toLocaleString()} / {ECONOMY_INTERVAL}틱</strong>
             </div>
             <div>
-              <span>공장</span>
-              <strong>{nationalStats.playerFactories.toLocaleString()}</strong>
+              <span>산업 시설</span>
+              <strong>{nationalStats.playerIndustryTotal.toLocaleString()}</strong>
             </div>
             <div>
-              <span>사단</span>
-              <strong>{nationalStats.playerDivisions.toLocaleString()}</strong>
+              <span>연구점수</span>
+              <strong>{game.researchPoints.player.toLocaleString()}</strong>
             </div>
           </section>
         )}
@@ -2465,8 +2667,8 @@ function App() {
 
             <div className="metric-grid economy-metrics">
               <div>
-                <span>공장</span>
-                <strong>{selected.factories}</strong>
+                <span>근사 지형</span>
+                <strong>{terrainLabels[selected.terrain]}</strong>
               </div>
               <div>
                 <span>사단</span>
@@ -2480,6 +2682,17 @@ function App() {
                 <span>보급</span>
                 <strong>{Math.round(selected.supply)}%</strong>
               </div>
+            </div>
+
+            <div className="industry-mini-grid">
+              {INDUSTRY_TYPES.map((kind) => (
+                <div key={kind}>
+                  <span>{industryLabels[kind]}</span>
+                  <strong>
+                    {selected.industry[kind]} / {INDUSTRY_MAX[kind]}
+                  </strong>
+                </div>
+              ))}
             </div>
 
             <div className="military-power-row">
@@ -2511,7 +2724,7 @@ function App() {
             {selectedOrder && (
               <div className="territory-production-card">
                 <div>
-                  <strong>{productionLabel(selectedOrder.kind)}</strong>
+                  <strong>{productionKindLabel(selectedOrder.kind)}</strong>
                   <span>{selectedOrder.remainingTicks}틱 남음</span>
                 </div>
                 <div className="progress-track">
@@ -2548,24 +2761,31 @@ function App() {
                   </div>
                 </div>
 
-                <div className="build-grid">
-                  <button
-                    disabled={
-                      Boolean(selectedOrder) ||
-                      selected.factories >= MAX_FACTORIES ||
-                      game.funds.player < FACTORY_COST
-                    }
-                    onClick={() =>
-                      setGame((previous) =>
-                        previous ? buildFactory(previous, selected.id) : previous,
-                      )
-                    }
-                  >
-                    <strong>산업 시설 대기열</strong>
-                    <span>
-                      비용 {FACTORY_COST} · {productionDuration('factory', selected)}틱 · 수익 +{FACTORY_INCOME}/{ECONOMY_INTERVAL}틱
-                    </span>
-                  </button>
+                <div className="build-grid expanded-industry-grid">
+                  {INDUSTRY_TYPES.map((kind) => (
+                    <button
+                      key={kind}
+                      disabled={
+                        Boolean(selectedOrder) ||
+                        selected.industry[kind] >= INDUSTRY_MAX[kind] ||
+                        game.funds.player < INDUSTRY_COSTS[kind]
+                      }
+                      onClick={() =>
+                        setGame((previous) =>
+                          previous
+                            ? buildIndustry(previous, selected.id, kind)
+                            : previous,
+                        )
+                      }
+                    >
+                      <strong>{industryLabels[kind]}</strong>
+                      <span>
+                        비용 {INDUSTRY_COSTS[kind]} ·{' '}
+                        {productionDuration(kind, selected)}틱 ·{' '}
+                        {industryDescription(kind)}
+                      </span>
+                    </button>
+                  ))}
 
                   <button
                     disabled={Boolean(selectedOrder) || game.funds.player < DIVISION_COST}
@@ -2575,9 +2795,9 @@ function App() {
                       )
                     }
                   >
-                    <strong>사단 편성 대기열</strong>
+                    <strong>사단 편성</strong>
                     <span>
-                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 새 사단이 해당 지역에 실제 배치
+                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 해당 지역에 신규 사단 배치
                     </span>
                   </button>
 
@@ -2593,11 +2813,11 @@ function App() {
                       )
                     }
                   >
-                    <strong>방어 강화</strong>
+                    <strong>방어 공사</strong>
                     <span>
                       {selected.defense >= MAX_DEFENSE
                         ? '최대 단계'
-                        : `비용 ${defenseUpgradeCost(selected.defense)} · ${productionDuration('defense', selected)}틱 · 방어 +1`}
+                        : `비용 ${defenseUpgradeCost(selected.defense)} · ${productionDuration('defense', selected)}틱 · 지역 방어 +1`}
                     </span>
                   </button>
                 </div>
