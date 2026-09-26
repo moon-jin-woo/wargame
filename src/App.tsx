@@ -1524,6 +1524,17 @@ function App() {
               <span>활성 대기열 {playerQueue.length}</span>
             </div>
 
+            {nationalStats && (
+              <div className="industry-overview">
+                {INDUSTRY_TYPES.map((kind) => (
+                  <div key={kind}>
+                    <span>{industryLabels[kind]}</span>
+                    <strong>{nationalStats.industry[kind]}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="production-list">
               {playerQueue.length === 0 ? (
                 <p className="panel-empty">
@@ -1564,6 +1575,82 @@ function App() {
                   )
                 })
               )}
+            </div>
+          </section>
+        )}
+
+        {game?.phase === 'running' && researchOpen && (
+          <section className="floating-panel research-panel">
+            <div className="floating-panel-head">
+              <div>
+                <p className="eyebrow">국가 연구</p>
+                <h2>연구 / 체계 개선</h2>
+              </div>
+              <button onClick={() => setResearchOpen(false)}>닫기</button>
+            </div>
+
+            <div className="research-summary">
+              <div>
+                <span>연구점수</span>
+                <strong>{game.researchPoints.player.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>주기 수입</span>
+                <strong>
+                  +{nationalStats?.researchIncome ?? 0} / {ECONOMY_INTERVAL}틱
+                </strong>
+              </div>
+            </div>
+
+            <div className="technology-list">
+              {TECHNOLOGY_TYPES.map((technology) => {
+                const level = game.technologies.player[technology]
+                const maxed = level >= TECHNOLOGY_MAX_LEVEL
+                const cost = maxed
+                  ? 0
+                  : technologyCost(technology, level)
+
+                return (
+                  <div key={technology} className="technology-row">
+                    <div className="technology-row-head">
+                      <div>
+                        <strong>{technologyLabels[technology]}</strong>
+                        <span>{technologyDescription(technology)}</span>
+                      </div>
+                      <b>Lv.{level}</b>
+                    </div>
+                    <div className="technology-pips">
+                      {Array.from({ length: TECHNOLOGY_MAX_LEVEL }).map(
+                        (_, index) => (
+                          <i
+                            key={index}
+                            className={index < level ? 'active' : ''}
+                          />
+                        ),
+                      )}
+                    </div>
+                    <button
+                      disabled={
+                        maxed ||
+                        game.researchPoints.player < cost
+                      }
+                      onClick={() =>
+                        setGame((previous) =>
+                          previous
+                            ? researchTechnology(
+                                previous,
+                                'player',
+                                technology,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      {maxed ? '최대 단계' : `연구 ${cost}점`}
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </section>
         )}
@@ -2286,16 +2373,16 @@ function App() {
               <strong>{game.funds.player.toLocaleString()}</strong>
             </div>
             <div>
-              <span>공장 수익</span>
+              <span>산업 수익</span>
               <strong>+{nationalStats.income.toLocaleString()} / {ECONOMY_INTERVAL}틱</strong>
             </div>
             <div>
-              <span>공장</span>
-              <strong>{nationalStats.playerFactories.toLocaleString()}</strong>
+              <span>산업 시설</span>
+              <strong>{nationalStats.playerIndustryTotal.toLocaleString()}</strong>
             </div>
             <div>
-              <span>사단</span>
-              <strong>{nationalStats.playerDivisions.toLocaleString()}</strong>
+              <span>연구점수</span>
+              <strong>{game.researchPoints.player.toLocaleString()}</strong>
             </div>
           </section>
         )}
