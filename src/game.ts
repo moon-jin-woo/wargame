@@ -2557,10 +2557,13 @@ function armyCommandModifier(
 
   const staffLevel =
     state.technologies[division.owner]?.staffCoordination ?? 0
+  const armyGroupLevel =
+    state.technologies[division.owner]?.armyGroupCommand ?? 0
   const planningLevel =
     state.technologies[division.owner]?.operationalPlanning ?? 0
   const commanderBonus =
-    (army.commander.trim() ? 1.03 : 1) * (1 + staffLevel * 0.018)
+    (army.commander.trim() ? 1.03 : 1) *
+    (1 + staffLevel * 0.018 + armyGroupLevel * 0.015)
   const planningBonus = attacking
     ? 1 +
       clamp(army.preparation, 0, 100) / 600 +
@@ -2681,10 +2684,27 @@ function processBattles(state: GameState): GameState {
 
     const attackerLogisticsTech =
       next.technologies[battle.attacker]?.logisticsPlanning ?? 0
+    const attackerTerrainTech =
+      next.technologies[battle.attacker]?.terrainAdaptation ?? 0
     const defenderEngineeringTech =
       target.owner === 'neutral'
         ? 0
         : next.technologies[target.owner]?.fieldEngineering ?? 0
+    const defenderWorksTech =
+      target.owner === 'neutral'
+        ? 0
+        : next.technologies[target.owner]?.defensiveWorks ?? 0
+    const attackerNational =
+      next.nationalStrategies[battle.attacker] ?? 'balancedDevelopment'
+    const defenderNational =
+      target.owner === 'neutral'
+        ? 'balancedDevelopment'
+        : next.nationalStrategies[target.owner] ?? 'balancedDevelopment'
+    const baseTerrainAttack = terrainAttack[target.terrain]
+    const adaptedTerrainAttack =
+      1 -
+      (1 - baseTerrainAttack) *
+        Math.max(0.55, 1 - attackerTerrainTech * 0.06)
 
     const attackerPower =
       attackers.reduce(
@@ -2696,7 +2716,7 @@ function processBattles(state: GameState): GameState {
       ) *
       (0.62 + averageAttackerSupply / 210) *
       stancePower[battle.stance] *
-      terrainAttack[target.terrain] *
+      adaptedTerrainAttack *
       (1 + attackerLogisticsTech * 0.025)
 
     const defenderPower =
@@ -2708,15 +2728,22 @@ function processBattles(state: GameState): GameState {
         0,
       ) *
         (0.68 + target.supply / 220) +
-        target.defense * DEFENSE_POWER +
+        target.defense * DEFENSE_POWER * (1 + defenderWorksTech * 0.05) +
         (target.owner === 'neutral' ? 20 : 35)) *
       terrainDefense[target.terrain] *
-      (1 + defenderEngineeringTech * 0.045)
+      (1 + defenderEngineeringTech * 0.045) *
+      nationalDefense[defenderNational]
 
     const ratio = attackerPower / Math.max(45, defenderPower)
     const jitter =
       ((hashString(`${battle.id}:${next.tick}`) % 9) - 4) * 0.28
-    const delta = clamp((ratio - 1) * 11 + jitter, -11, 13)
+    const delta = clamp(
+      (ratio - 1) * 11 *
+        (attackerNational === 'mobileCommand' ? 1.04 : 1) +
+        jitter,
+      -11,
+      13,
+    )
     const progress = battle.progress + delta
 
     const attackerStrengthLoss = clamp(
@@ -3420,14 +3447,20 @@ function processArmyPlanning(state: GameState): GameState {
         state.technologies[army.owner]?.commandNetwork ?? 0
       const planningLevel =
         state.technologies[army.owner]?.operationalPlanning ?? 0
+      const armyGroupLevel =
+        state.technologies[army.owner]?.armyGroupCommand ?? 0
+      const nationalStrategy =
+        state.nationalStrategies[army.owner] ?? 'balancedDevelopment'
       preparation = Math.min(
         100,
         preparation +
           (1.2 +
             readiness * 1.8 +
             commandLevel * 0.45 +
-            planningLevel * 0.28) *
-            strategyPreparation[army.strategy],
+            planningLevel * 0.28 +
+            armyGroupLevel * 0.3) *
+            strategyPreparation[army.strategy] *
+            nationalPlanning[nationalStrategy],
       )
     } else if (planStatus === 'executing') {
       preparation = Math.max(0, preparation - 1.5)
