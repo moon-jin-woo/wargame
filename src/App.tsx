@@ -567,7 +567,9 @@ function App() {
             ? `${mapMode}|${Math.round(territory.supply / 5)}|${visualColor}`
             : mapMode === 'terrain'
               ? `${mapMode}|${territory.terrain}|${visualColor}`
-              : `${mapMode}|${industryKey}|${visualColor}`
+              : mapMode === 'railway'
+                ? `${mapMode}|${territory.railway}|${visualColor}`
+                : `${mapMode}|${industryKey}|${visualColor}`
 
       if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
@@ -2390,14 +2392,18 @@ function App() {
                 ? '보급 지도'
                 : mapMode === 'industry'
                   ? '산업 지도'
-                  : '근사 지형 지도'}
+                  : mapMode === 'terrain'
+                    ? '근사 지형 지도'
+                    : '철도망 지도'}
             </strong>
             <span>
               {mapMode === 'supply'
                 ? '초록 = 안정 · 황색 = 주의 · 적갈색 = 취약'
                 : mapMode === 'industry'
                   ? '밝을수록 산업·인프라 시설 총량이 많음'
-                  : '도시·평야·구릉·산악·산림·해안·도서의 게임용 근사 분류'}
+                  : mapMode === 'terrain'
+                    ? '도시·평야·구릉·산악·산림·해안·도서의 게임용 근사 분류'
+                    : '밝은 선로일수록 철도 단계가 높음 · 철도는 보급과 이동에 영향'}
             </span>
           </div>
         )}
@@ -2457,7 +2463,9 @@ function App() {
                     ? 'industry'
                     : mode === 'industry'
                       ? 'terrain'
-                      : 'control',
+                      : mode === 'terrain'
+                        ? 'railway'
+                        : 'control',
               )
             }
           >
@@ -2468,7 +2476,9 @@ function App() {
                 ? '보급'
                 : mapMode === 'industry'
                   ? '산업'
-                  : '지형'}
+                  : mapMode === 'terrain'
+                    ? '지형'
+                    : '철도'}
           </button>
           <button
             className={rulesOpen ? 'active' : ''}
