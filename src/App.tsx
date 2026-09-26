@@ -1103,6 +1103,200 @@ function App() {
           </div>
         )}
 
+        {game?.phase === 'running' && divisionsOpen && (
+          <section className="floating-panel divisions-panel">
+            <div className="floating-panel-head">
+              <div>
+                <p className="eyebrow">육군 사령부</p>
+                <h2>사단 목록</h2>
+              </div>
+              <button onClick={() => setDivisionsOpen(false)}>닫기</button>
+            </div>
+
+            <div className="division-command-strip">
+              <span>
+                총 {playerDivisions.length}개 · 선택 {selectedDivisions.length}개
+              </span>
+              <div>
+                <button
+                  disabled={divisionsAtSelected.length === 0}
+                  onClick={() =>
+                    setSelectedDivisionIds(
+                      divisionsAtSelected
+                        .filter((division) => division.status === 'idle')
+                        .map((division) => division.id),
+                    )
+                  }
+                >
+                  현재 지역 선택
+                </button>
+                <button
+                  disabled={selectedDivisions.length === 0}
+                  onClick={() => setSelectedDivisionIds([])}
+                >
+                  선택 해제
+                </button>
+                <button
+                  disabled={
+                    selectedDivisions.length === 0 ||
+                    !selectedDivisions.some((division) => division.orderId)
+                  }
+                  onClick={() =>
+                    setGame((previous) =>
+                      previous
+                        ? haltDivisions(previous, selectedDivisionIds)
+                        : previous,
+                    )
+                  }
+                >
+                  이동 취소
+                </button>
+              </div>
+            </div>
+
+            {selectedDivisions.length > 0 && (
+              <div className="division-order-hint">
+                <strong>{selectedDivisions.length}개 사단 선택됨</strong>
+                <span>
+                  지도에서 목적지를 클릭하세요. 아군 지역이면 이동, 다른 세력 지역이면 전투 명령이 내려집니다.
+                </span>
+              </div>
+            )}
+
+            {selectedDivisions.length === 1 && (() => {
+              const division = selectedDivisions[0]
+              const territory = game.territories[division.locationId]
+              return (
+                <div className="division-editor">
+                  <div className="division-editor-title">
+                    <strong>사단 정보 편집</strong>
+                    <span>{territory?.fullName ?? '위치 없음'}</span>
+                  </div>
+                  <label>
+                    사단 명칭
+                    <input
+                      value={division.name}
+                      maxLength={32}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? renameDivision(
+                                previous,
+                                division.id,
+                                event.target.value,
+                              )
+                            : previous,
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    지휘관
+                    <input
+                      value={division.commanderName}
+                      maxLength={24}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? renameCommander(
+                                previous,
+                                division.id,
+                                event.target.value,
+                              )
+                            : previous,
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+              )
+            })()}
+
+            <div className="division-list">
+              {playerDivisions.length === 0 ? (
+                <p className="panel-empty">보유 사단이 없습니다.</p>
+              ) : (
+                playerDivisions.map((division) => {
+                  const territory = game.territories[division.locationId]
+                  const selectedUnit = selectedDivisionIds.includes(division.id)
+                  const order = division.orderId
+                    ? game.divisionOrders.find(
+                        (candidate) => candidate.id === division.orderId,
+                      )
+                    : null
+
+                  return (
+                    <button
+                      key={division.id}
+                      className={`division-row ${selectedUnit ? 'selected' : ''}`}
+                      onClick={() => {
+                        setGame((previous) =>
+                          previous
+                            ? { ...previous, selectedId: division.locationId }
+                            : previous,
+                        )
+
+                        setSelectedDivisionIds((current) => {
+                          if (current.includes(division.id)) {
+                            return current.filter((id) => id !== division.id)
+                          }
+
+                          const currentDivision = current[0]
+                            ? game.divisions[current[0]]
+                            : null
+                          if (
+                            currentDivision &&
+                            currentDivision.locationId !== division.locationId
+                          ) {
+                            return [division.id]
+                          }
+
+                          return [...current, division.id]
+                        })
+                      }}
+                    >
+                      <div className="division-row-head">
+                        <div>
+                          <strong>{division.name || '이름 없는 사단'}</strong>
+                          <span>{division.commanderName || '지휘관 미지정'}</span>
+                        </div>
+                        <em>{divisionStatusLabel(division)}</em>
+                      </div>
+                      <div className="division-row-location">
+                        <span>{territory?.name ?? '위치 없음'}</span>
+                        <small>
+                          전투력 {divisionMilitaryPower(division)} · 경험 {division.experience.toFixed(1)}
+                        </small>
+                      </div>
+                      <div className="division-readiness">
+                        <div>
+                          <span>병력 {Math.round(division.strength)}%</span>
+                          <i>
+                            <b style={{ width: `${division.strength}%` }} />
+                          </i>
+                        </div>
+                        <div>
+                          <span>조직 {Math.round(division.organization)}%</span>
+                          <i>
+                            <b style={{ width: `${division.organization}%` }} />
+                          </i>
+                        </div>
+                      </div>
+                      {order && (
+                        <small className="division-order-text">
+                          {order.kind === 'attack' ? '공격' : '이동'} ·{' '}
+                          {game.territories[order.targetId]?.name ?? '?'} ·{' '}
+                          {order.remainingTicks}틱
+                        </small>
+                      )}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </section>
+        )}
+
         {game?.phase === 'running' && productionOpen && (
           <section className="floating-panel production-panel">
             <div className="floating-panel-head">
@@ -1299,8 +1493,8 @@ function App() {
               <div>
                 <strong>2. 전투도 즉시 끝나지 않습니다</strong>
                 <span>
-                  내 행정동을 선택한 다음 인접한 다른 세력 영토를 클릭하면 전투가 시작됩니다.
-                  전선 패널에서 진행 게이지를 확인할 수 있습니다.
+                  사단 마커나 사단 목록에서 실제 사단을 선택한 뒤 지도에서 목적지를 클릭합니다.
+                  아군 지역은 이동하고, 다른 세력 지역은 이동 후 전투에 돌입합니다.
                 </span>
               </div>
               <div>
@@ -1314,7 +1508,7 @@ function App() {
                 <strong>4. 연결과 보급을 유지합니다</strong>
                 <span>
                   같은 세력 영토와 연결된 지역은 보급이 회복되고, 고립된 지역은 보급이 떨어집니다.
-                  인접 아군 지역으로 1개 사단을 재배치할 수도 있습니다.
+                  사단은 아군 영토를 따라 실제로 이동하며, 이동 중에는 다른 명령을 받을 수 없습니다.
                 </span>
               </div>
               <div>
@@ -1376,6 +1570,14 @@ function App() {
             onClick={() => setCommandOpen((open) => !open)}
           >
             지휘
+          </button>
+          <button
+            className={divisionsOpen ? 'active' : ''}
+            disabled={game?.phase !== 'running'}
+            onClick={() => setDivisionsOpen((open) => !open)}
+          >
+            사단
+            {playerDivisions.length > 0 && <b>{playerDivisions.length}</b>}
           </button>
           <button
             className={productionOpen ? 'active' : ''}
@@ -1932,6 +2134,22 @@ function App() {
               지도에서 확대
             </button>
 
+            {selected.owner === 'player' && divisionsAtSelected.length > 0 && (
+              <button
+                className="select-local-divisions"
+                onClick={() => {
+                  setSelectedDivisionIds(
+                    divisionsAtSelected
+                      .filter((division) => division.status === 'idle')
+                      .map((division) => division.id),
+                  )
+                  setDivisionsOpen(true)
+                }}
+              >
+                이 지역 대기 사단 선택 ({divisionsAtSelected.filter((division) => division.status === 'idle').length})
+              </button>
+            )}
+
             <div className="neighbor-heading">
               <h3>인접 행정동</h3>
               <span>{neighbors.length}개</span>
@@ -1944,67 +2162,26 @@ function App() {
                     battle.fromId === neighbor.id ||
                     battle.toId === neighbor.id,
                 )
-                const canCapture =
-                  game.phase === 'running' &&
-                  selected.owner === 'player' &&
-                  neighbor.owner !== 'player' &&
-                  selected.divisions > 0 &&
-                  !selectedBattle &&
-                  !neighborBattle
-                const canSupport =
-                  game.phase === 'running' &&
-                  selected.owner === 'player' &&
-                  neighbor.owner === 'player' &&
-                  selected.divisions > 1 &&
-                  !selectedBattle &&
-                  !neighborBattle
+                const commandReady = selectedDivisions.length > 0
 
                 return (
                   <div key={neighbor.id} className="neighbor-item">
                     <button
-                      className={`neighbor-main ${canCapture ? 'capture' : ''} ${neighborBattle ? 'engaged' : ''}`}
-                      onClick={() => {
-                        if (canCapture) {
-                          setGame((previous) =>
-                            previous
-                              ? captureTerritory(previous, selected.id, neighbor.id)
-                              : previous,
-                          )
-                        } else {
-                          setGame((previous) =>
-                            previous
-                              ? { ...previous, selectedId: neighbor.id }
-                              : previous,
-                          )
-                        }
-                      }}
+                      className={`neighbor-main ${commandReady ? 'command-target' : ''} ${neighborBattle ? 'engaged' : ''}`}
+                      onClick={() => handleTerritoryCommand(neighbor.id)}
                     >
                       <span>{neighbor.name}</span>
                       <small>
                         {ownerName(neighbor.owner, game)} · 사단 {neighbor.divisions} · 방어 {neighbor.defense}
                         {neighborBattle
                           ? ' · 전투 중'
-                          : canCapture
-                            ? ' · 작전 개시'
+                          : commandReady
+                            ? neighbor.owner === 'player'
+                              ? ' · 이동 명령'
+                              : ' · 공격 명령'
                             : ''}
                       </small>
                     </button>
-
-                    {canSupport && (
-                      <button
-                        className="support-button"
-                        title="현재 지역에서 1개 사단을 인접 아군 영토로 이동"
-                        onClick={() =>
-                          setGame((previous) =>
-                            previous
-                              ? transferTroops(previous, selected.id, neighbor.id)
-                              : previous,
-                          )
-                        }
-                      >
-                        1사단 재배치
-                      </button>
-                    )}
                   </div>
                 )
               })}
