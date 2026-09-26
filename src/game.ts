@@ -3087,6 +3087,62 @@ function aiCorpsStrategy(
   return 'balanced'
 }
 
+function chooseAiNationalStrategy(
+  state: GameState,
+  owner: AiFactionId,
+): NationalStrategy {
+  const owned = Object.values(state.territories).filter(
+    (territory) => territory.owner === owner,
+  )
+  if (owned.length === 0) return 'balancedDevelopment'
+
+  const averageSupply =
+    owned.reduce((sum, territory) => sum + territory.supply, 0) /
+    owned.length
+  const frontlines = owned.filter((territory) =>
+    territory.neighbors.some(
+      (neighborId) => state.territories[neighborId]?.owner !== owner,
+    ),
+  ).length
+  const civilian = owned.reduce(
+    (sum, territory) => sum + territory.industry.civilian,
+    0,
+  )
+  const research = owned.reduce(
+    (sum, territory) => sum + territory.industry.research,
+    0,
+  )
+  const technologyScore = TECHNOLOGY_IDS.reduce(
+    (sum, technology) =>
+      sum + (state.technologies[owner][technology] ?? 0),
+    0,
+  )
+
+  if (averageSupply < 56) return 'railwayPriority'
+  if (frontlines >= Math.max(3, Math.ceil(owned.length * 0.45))) {
+    return state.difficulty === 'hard'
+      ? 'mobileCommand'
+      : 'fortifiedState'
+  }
+  if (civilian < Math.max(2, Math.ceil(owned.length / 5))) {
+    return 'industrialPush'
+  }
+  if (research > 0 && technologyScore < 14) {
+    return 'researchInitiative'
+  }
+
+  const variants: NationalStrategy[] = [
+    'balancedDevelopment',
+    'industrialPush',
+    'railwayPriority',
+    'mobileCommand',
+  ]
+  return variants[
+    hashString(`${owner}:${Math.floor(state.tick / 25)}`) %
+      variants.length
+  ]
+}
+
 function maintainAiCorps(
   state: GameState,
   owner: AiFactionId,
@@ -3100,9 +3156,52 @@ function maintainAiCorps(
     )
   if (divisions.length === 0) return state
 
+  const frontTerritories = Object.values(state.territories)
+    .filter(
+      (territory) =>
+        territory.owner === owner &&
+        territory.neighbors.some(
+          (neighborId) =>
+            state.territories[neighborId]?.owner !== owner,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        b.neighbors.filter(
+          (neighborId) =>
+            state.territories[neighborId]?.owner !== owner,
+        ).length -
+          a.neighbors.filter(
+            (neighborId) =>
+              state.territories[neighborId]?.owner !== owner,
+          ).length ||
+        a.id.localeCompare(b.id),
+    )
+
+  const theaterNames = [
+    ...new Set(
+      frontTerritories.map(
+        (territory) => territory.sidoName || territory.sggName || '전선',
+      ),
+    ),
+  ]
+
   const cap =
-    state.difficulty === 'easy' ? 2 : state.difficulty === 'hard' ? 8 : 6
-  const desired = Math.min(cap, Math.max(1, Math.ceil(divisions.length / 3)))
+    state.difficulty === 'easy'
+      ? 4
+      : state.difficulty === 'hard'
+        ? 14
+        : 10
+  const desired = Math.min(
+    cap,
+    divisions.length,
+    Math.max(
+      2,
+      theaterNames.length,
+      Math.ceil(divisions.length / 2),
+    ),
+  )
+
   let next = state
 
   while (armiesForOwner(next, owner).length < desired) {
@@ -3116,17 +3215,61 @@ function maintainAiCorps(
     next = created.state
   }
 
-  const corps = armiesForOwner(next, owner)
+  const corps = armiesForOwner(next, owner).slice(0, desired)
   if (corps.length === 0) return next
 
-  const hostileTargets = Object.values(next.territories)
-    .filter(
-      (territory) =>
-        territory.owner === owner &&
-        territory.neighbors.some(
-          (neighborId) => next.territories[neighborId]?.owner !== owner,
-        ),
+  const armies = { ...next.armies }
+  const divisionUnits = { ...next.divisionUnits }
+
+  corps.forEach((army, index) => {
+    armies[army.id] = {
+      ...army,
+      divisionIds: [],
+      theater:
+        theaterNames.length > 0
+          ? theaterNames[index % theaterNames.length]
+          : '예비 전구',
+      strategy: aiCorpsStrategy(next, owner, index + 1),
+    }
+  })
+
+  for (const division of divisions) {
+    const territory = next.territories[division.locationId]
+    const region =
+      territory?.sidoName || territory?.sggName || '예비 전구'
+
+    const regional = corps.filter(
+      (army) => armies[army.id].theater === region,
     )
+    const pool = regional.length > 0 ? regional : corps
+
+    const existing = division.armyId
+      ? pool.find((army) => army.id === division.armyId)
+      : null
+
+    const chosen =
+      existing ??
+      [...pool].sort(
+        (a, b) =>
+          armies[a.id].divisionIds.length -
+            armies[b.id].divisionIds.length ||
+          a.id.localeCompare(b.id),
+      )[0]
+
+    armies[chosen.id] = {
+      ...armies[chosen.id],
+      divisionIds: [
+        ...armies[chosen.id].divisionIds,
+        division.id,
+      ],
+    }
+    divisionUnits[division.id] = {
+      ...division,
+      armyId: chosen.id,
+    }
+  }
+
+  const allHostileTargets = frontTerritories
     .flatMap((territory) =>
       territory.neighbors
         .map((neighborId) => next.territories[neighborId])
@@ -3137,50 +3280,66 @@ function maintainAiCorps(
     )
     .filter(
       (target, index, values) =>
-        values.findIndex((candidate) => candidate.id === target.id) === index,
+        values.findIndex((candidate) => candidate.id === target.id) ===
+        index,
     )
-    .sort(
+
+  corps.forEach((army) => {
+    const current = armies[army.id]
+    const assigned = current.divisionIds
+      .map((divisionId) => divisionUnits[divisionId])
+      .filter((division): division is DivisionUnit =>
+        Boolean(division),
+      )
+
+    const localTargets = assigned
+      .flatMap((division) => {
+        const location = next.territories[division.locationId]
+        return (
+          location?.neighbors
+            .map((neighborId) => next.territories[neighborId])
+            .filter(
+              (target): target is TerritoryState =>
+                Boolean(target && target.owner !== owner),
+            ) ?? []
+        )
+      })
+      .filter(
+        (target, index, values) =>
+          values.findIndex(
+            (candidate) => candidate.id === target.id,
+          ) === index,
+      )
+
+    const theaterTargets = allHostileTargets.filter(
+      (target) =>
+        target.sidoName === current.theater ||
+        target.neighbors.some(
+          (neighborId) =>
+            next.territories[neighborId]?.sidoName === current.theater,
+        ),
+    )
+
+    const target = [
+      ...(localTargets.length > 0
+        ? localTargets
+        : theaterTargets.length > 0
+          ? theaterTargets
+          : allHostileTargets),
+    ].sort(
       (a, b) =>
         territoryMilitaryPower(a, next) -
           territoryMilitaryPower(b, next) ||
+        b.supply - a.supply ||
         a.id.localeCompare(b.id),
+    )[0]
+
+    const active = assigned.some(
+      (division) => division.status !== 'idle',
     )
 
-  const armies = { ...next.armies }
-  const divisionUnits = { ...next.divisionUnits }
-
-  for (const army of corps) {
     armies[army.id] = {
-      ...army,
-      divisionIds: [],
-    }
-  }
-
-  divisions.forEach((division, index) => {
-    const army = corps[index % corps.length]
-    armies[army.id] = {
-      ...armies[army.id],
-      divisionIds: [...armies[army.id].divisionIds, division.id],
-    }
-    divisionUnits[division.id] = {
-      ...division,
-      armyId: army.id,
-    }
-  })
-
-  corps.forEach((army, index) => {
-    const assigned = armies[army.id].divisionIds
-      .map((divisionId) => divisionUnits[divisionId])
-      .filter((division): division is DivisionUnit => Boolean(division))
-    const active = assigned.some((division) => division.status !== 'idle')
-    const target =
-      hostileTargets.length > 0
-        ? hostileTargets[index % hostileTargets.length]
-        : null
-
-    armies[army.id] = {
-      ...armies[army.id],
-      strategy: aiCorpsStrategy(next, owner, index + 1),
+      ...current,
       objectiveId: target?.id ?? null,
       planStatus: target
         ? active
@@ -3548,6 +3707,11 @@ function applyIncome(state: GameState): GameState {
   }
 
   for (const owner of activeAiFactions(state.aiCount)) {
+    next = setNationalStrategy(
+      next,
+      owner,
+      chooseAiNationalStrategy(next, owner),
+    )
     next = maybeAiResearch(next, owner)
     next = aiBuild(next, owner)
   }
