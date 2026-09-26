@@ -1018,7 +1018,7 @@ function startBattleWithDivisions(
     to.owner === 'neutral'
       ? []
       : divisionsAt(state, toId, to.owner as PlayableFactionId)
-          .filter((division) => division.status !== 'moving')
+          .filter((division) => division.status === 'idle')
           .map((division) => division.id)
 
   const battleId = `${owner}:battle:${fromId}:${toId}:${state.tick}`
