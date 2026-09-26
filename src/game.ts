@@ -1775,6 +1775,114 @@ export function buildRailway(state: GameState, territoryId: string): GameState {
   return queueProduction(state, territoryId, 'railway')
 }
 
+function findFriendlyRoute(
+  state: GameState,
+  owner: PlayableFactionId,
+  startId: string,
+  endId: string,
+): string[] {
+  if (startId === endId) return [startId]
+  const start = state.territories[startId]
+  const end = state.territories[endId]
+  if (!start || !end || start.owner !== owner || end.owner !== owner) {
+    return []
+  }
+
+  const queue = [startId]
+  const previous = new Map<string, string | null>([[startId, null]])
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!
+    const current = state.territories[currentId]
+    if (!current) continue
+
+    for (const neighborId of current.neighbors) {
+      if (previous.has(neighborId)) continue
+      const neighbor = state.territories[neighborId]
+      if (!neighbor || neighbor.owner !== owner) continue
+
+      previous.set(neighborId, currentId)
+      if (neighborId === endId) {
+        const path: string[] = []
+        let cursor: string | null = endId
+        while (cursor) {
+          path.unshift(cursor)
+          if (cursor === startId) break
+          cursor = previous.get(cursor) ?? null
+        }
+        return path[0] === startId ? path : []
+      }
+      queue.push(neighborId)
+    }
+  }
+
+  return []
+}
+
+export function planRailwayRoute(
+  state: GameState,
+  startId: string,
+  endId: string,
+): GameState {
+  if (state.phase !== 'running') return state
+
+  const path = findFriendlyRoute(state, 'player', startId, endId)
+  if (path.length < 2) return state
+
+  let funds = state.funds.player
+  const added: ProductionOrder[] = []
+
+  for (const territoryId of path) {
+    const territory = state.territories[territoryId]
+    if (
+      !territory ||
+      territory.owner !== 'player' ||
+      territory.railway >= MAX_RAILWAY ||
+      hasProductionAt(state, 'player', territoryId) ||
+      added.some((order) => order.territoryId === territoryId)
+    ) {
+      continue
+    }
+
+    const cost = productionCost('railway', territory)
+    if (funds < cost) break
+
+    const duration = productionDurationForOwner(
+      state,
+      'railway',
+      territory,
+      'player',
+    )
+
+    added.push({
+      id: `player:${territoryId}:railway-route:${state.tick}:${added.length}`,
+      owner: 'player',
+      territoryId,
+      kind: 'railway',
+      cost,
+      totalTicks: duration,
+      remainingTicks: duration,
+      queuedTick: state.tick,
+    })
+    funds -= cost
+  }
+
+  if (added.length === 0) return state
+
+  return withEvent(
+    {
+      ...state,
+      funds: {
+        ...state.funds,
+        player: funds,
+      },
+      productionQueue: [...state.productionQueue, ...added],
+    },
+    'production',
+    `철도 노선 계획 · ${state.territories[startId].name} ↔ ${state.territories[endId].name} · ${added.length}개 구간 건설`,
+  )
+}
+
 export function cancelProduction(
   state: GameState,
   orderId: string,
