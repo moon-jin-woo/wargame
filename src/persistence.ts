@@ -595,7 +595,7 @@ export function restoreGame(base: GameState): GameState | null {
     }
 
     const divisionUnits =
-      saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11 || saved.schema === 11
+      saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11
         ? validDivisionUnits(saved.divisionUnits, territories)
         : migrateLegacyDivisionCounts(
             territories,
@@ -739,7 +739,7 @@ export function restoreGame(base: GameState): GameState | null {
         territories,
       ),
       battles:
-        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11 || saved.schema === 11
+        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11
           ? validBattles(saved.battles, territories, divisionUnits)
           : [],
       divisionUnits,
