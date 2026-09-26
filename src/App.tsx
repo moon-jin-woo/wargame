@@ -5,7 +5,7 @@ import {
   advanceTick,
   attackStanceLabels,
   buildDivision,
-  buildFactory,
+  buildIndustry,
   cancelDivisionOrder,
   cancelProduction,
   createArmy,
@@ -14,14 +14,17 @@ import {
   difficultyLabels,
   DIVISION_COST,
   ECONOMY_INTERVAL,
-  FACTORY_COST,
   FACTORY_INCOME,
   divisionsAt,
+  factionResearchPerCycle,
   divisionRoleLabels,
   executeArmyPlan,
   factionIncomePerCycle,
   factions,
   haltArmyPlan,
+  INDUSTRY_COSTS,
+  INDUSTRY_MAX,
+  industryLabels,
   issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
@@ -29,6 +32,7 @@ import {
   playerArmies,
   playerDivisions,
   productionDuration,
+  productionKindLabel,
   renameArmy,
   renameArmyCommander,
   renameCommander,
@@ -37,6 +41,11 @@ import {
   setDivisionRole,
   assignDivisionToArmy,
   startGame,
+  researchTechnology,
+  technologyCost,
+  technologyLabels,
+  TECHNOLOGY_MAX_LEVEL,
+  terrainLabels,
   territoryMilitaryPower,
   upgradeDefense,
 } from './game'
@@ -53,7 +62,9 @@ import type {
   FactionId,
   GameSpeed,
   GameState,
+  IndustryType,
   ProductionKind,
+  TechnologyId,
   TerritoryState,
 } from './types'
 
@@ -65,7 +76,32 @@ const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
-type MapMode = 'control' | 'supply' | 'industry'
+type MapMode = 'control' | 'supply' | 'industry' | 'terrain'
+
+const INDUSTRY_TYPES: IndustryType[] = [
+  'civilian',
+  'military',
+  'logistics',
+  'infrastructure',
+  'research',
+]
+
+const TECHNOLOGY_TYPES: TechnologyId[] = [
+  'industrialMethods',
+  'logisticsPlanning',
+  'commandNetwork',
+  'fieldEngineering',
+]
+
+const TERRAIN_COLORS: Record<TerritoryState['terrain'], string> = {
+  urban: '#7f7067',
+  plains: '#71835f',
+  hills: '#8b7b59',
+  mountain: '#696d70',
+  forest: '#506b54',
+  coastal: '#66808a',
+  island: '#6d718d',
+}
 
 function territoryMapColor(
   territory: TerritoryState,
@@ -81,10 +117,22 @@ function territoryMapColor(
     return '#70433f'
   }
 
-  if (territory.factories >= 4) return '#d0b46e'
-  if (territory.factories === 3) return '#aa915d'
-  if (territory.factories === 2) return '#81724f'
-  if (territory.factories === 1) return '#5e5947'
+  if (mode === 'terrain') {
+    return TERRAIN_COLORS[territory.terrain]
+  }
+
+  const industryLevel =
+    territory.industry.civilian +
+    territory.industry.military +
+    territory.industry.logistics +
+    territory.industry.infrastructure +
+    territory.industry.research
+
+  if (industryLevel >= 10) return '#d6b96f'
+  if (industryLevel >= 7) return '#b29a62'
+  if (industryLevel >= 4) return '#877a57'
+  if (industryLevel >= 2) return '#625f4d'
+  if (industryLevel >= 1) return '#4b4f45'
   return '#343a3a'
 }
 
@@ -92,12 +140,6 @@ function formatStrategicTime(tick: number): string {
   const day = Math.floor(tick / 4) + 1
   const hour = (tick % 4) * 6
   return `DAY ${String(day).padStart(3, '0')} · ${String(hour).padStart(2, '0')}:00`
-}
-
-function productionLabel(kind: ProductionKind): string {
-  if (kind === 'factory') return '산업 시설'
-  if (kind === 'division') return '사단 편성'
-  return '방어 공사'
 }
 
 function divisionStatusLabel(division: DivisionUnit): string {
@@ -140,6 +182,7 @@ function App() {
   const [speedOpen, setSpeedOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(true)
   const [productionOpen, setProductionOpen] = useState(false)
+  const [researchOpen, setResearchOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
   const [objectiveMode, setObjectiveMode] = useState(false)
@@ -1450,7 +1493,7 @@ function App() {
                     <div key={order.id} className="production-row">
                       <div className="production-row-top">
                         <div>
-                          <strong>{productionLabel(order.kind)}</strong>
+                          <strong>{productionKindLabel(order.kind)}</strong>
                           <span>{territory?.name ?? '지역 없음'}</span>
                         </div>
                         <button
@@ -2511,7 +2554,7 @@ function App() {
             {selectedOrder && (
               <div className="territory-production-card">
                 <div>
-                  <strong>{productionLabel(selectedOrder.kind)}</strong>
+                  <strong>{productionKindLabel(selectedOrder.kind)}</strong>
                   <span>{selectedOrder.remainingTicks}틱 남음</span>
                 </div>
                 <div className="progress-track">
