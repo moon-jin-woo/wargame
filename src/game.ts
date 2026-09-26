@@ -748,13 +748,23 @@ function processProduction(state: GameState): GameState {
   return { ...next, productionQueue: remaining }
 }
 
-function movementTicks(source: TerritoryState, target: TerritoryState): number {
+function movementTicks(
+  source: TerritoryState,
+  target: TerritoryState,
+  role: DivisionRole = 'line',
+): number {
   const supplyPenalty = Math.round((100 - source.supply) / 35)
   const distancePenalty = Math.min(
     2,
     Math.floor(Math.sqrt(distanceSquared(source.centroid, target.centroid)) * 5),
   )
-  return clamp(2 + supplyPenalty + distancePenalty, 2, 6)
+  return clamp(
+    Math.ceil(
+      (2 + supplyPenalty + distancePenalty) * roleMoveMultiplier[role],
+    ),
+    1,
+    7,
+  )
 }
 
 function findDivisionRoute(
@@ -866,12 +876,13 @@ export function issueDivisionOrder(
   const firstStep = state.territories[path[0]]
   if (!firstStep) return state
 
-  const totalTicks = movementTicks(source, firstStep)
+  const totalTicks = movementTicks(source, firstStep, division.role)
   const orderType =
     target.owner === division.owner ? 'move' : 'attack'
 
   const nextDivision: DivisionUnit = {
     ...division,
+    entrenchment: 0,
     status: 'moving',
     order: {
       type: orderType,
@@ -929,6 +940,7 @@ function startDivisionBattle(
   if (existing) {
     const nextDivision: DivisionUnit = {
       ...division,
+      entrenchment: 0,
       status: 'attacking',
       order: {
         type: 'attack',
@@ -967,9 +979,10 @@ function startDivisionBattle(
   const defenders = defenderIdsAt(state, targetId, target.owner)
 
   if (defenders.length === 0 && target.defense === 0) {
-    const totalTicks = movementTicks(source, target)
+    const totalTicks = movementTicks(source, target, division.role)
     const nextDivision: DivisionUnit = {
       ...division,
+      entrenchment: 0,
       status: 'moving',
       order: {
         type: 'move',
@@ -1004,6 +1017,7 @@ function startDivisionBattle(
   const divisionUnits = { ...state.divisionUnits }
   divisionUnits[division.id] = {
     ...division,
+    entrenchment: 0,
     status: 'attacking',
     order: {
       type: 'attack',
@@ -1206,7 +1220,7 @@ function processMovement(state: GameState): GameState {
         continue
       }
 
-      const legTicks = movementTicks(nextStep, following)
+      const legTicks = movementTicks(nextStep, following, division.role)
       nextOrder = {
         ...order,
         path: remainingPath,
@@ -1218,6 +1232,7 @@ function processMovement(state: GameState): GameState {
     divisionUnits[division.id] = {
       ...division,
       locationId: nextStep.id,
+      entrenchment: 0,
       status: arrivedAtFinal ? 'idle' : 'moving',
       order: nextOrder,
       organization: Math.max(30, division.organization - 2.5),
@@ -1274,9 +1289,21 @@ function processMovement(state: GameState): GameState {
   return next
 }
 
-function divisionCombatPower(division: DivisionUnit): number {
+function divisionCombatPower(
+  division: DivisionUnit,
+  defending = false,
+): number {
+  const roleModifier = defending
+    ? roleDefense[division.role]
+    : rolePower[division.role]
+  const entrenchmentModifier = defending
+    ? 1 + division.entrenchment * 0.002
+    : 1
+
   return (
     DIVISION_POWER *
+    roleModifier *
+    entrenchmentModifier *
     (division.strength / 100) *
     (0.35 + division.organization / 150) *
     (1 + division.experience / 300)
@@ -1388,7 +1415,7 @@ function processBattles(state: GameState): GameState {
 
     const attackerPower =
       attackers.reduce(
-        (sum, division) => sum + divisionCombatPower(division),
+        (sum, division) => sum + divisionCombatPower(division, false),
         0,
       ) *
       (0.62 + averageAttackerSupply / 210) *
@@ -1396,7 +1423,7 @@ function processBattles(state: GameState): GameState {
 
     const defenderPower =
       defenders.reduce(
-        (sum, division) => sum + divisionCombatPower(division),
+        (sum, division) => sum + divisionCombatPower(division, true),
         0,
       ) *
         (0.68 + target.supply / 220) +
@@ -1719,7 +1746,7 @@ function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
       )
 
     if (friendlyFront) {
-      const totalTicks = movementTicks(territory, friendlyFront)
+      const totalTicks = movementTicks(territory, friendlyFront, current.role)
       next = setDivision(next, {
         ...current,
         status: 'moving',
