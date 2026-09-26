@@ -3,8 +3,10 @@ import * as maplibregl from 'maplibre-gl'
 import { loadLatestAdminDongs } from './adminData'
 import {
   advanceTick,
+  attackStanceLabels,
   buildDivision,
   buildFactory,
+  cancelProduction,
   captureTerritory,
   createInitialState,
   defenseUpgradeCost,
@@ -30,14 +32,29 @@ import type {
   AiCount,
   AiFactionId,
   Difficulty,
+  AttackStance,
   FactionId,
+  GameSpeed,
   GameState,
+  ProductionKind,
   TerritoryState,
 } from './types'
 
 const SOURCE_ID = 'admin-dongs'
 const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
+
+function formatStrategicTime(tick: number): string {
+  const day = Math.floor(tick / 4) + 1
+  const hour = (tick % 4) * 6
+  return `DAY ${String(day).padStart(3, '0')} · ${String(hour).padStart(2, '0')}:00`
+}
+
+function productionLabel(kind: ProductionKind): string {
+  if (kind === 'factory') return '산업 시설'
+  if (kind === 'division') return '사단 편성'
+  return '방어 공사'
+}
 
 function ownerName(owner: FactionId, game: GameState): string {
   if (owner === 'player') return game.playerName
@@ -57,6 +74,7 @@ function App() {
   const previousOwners = useRef<Record<string, string>>({})
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
+  const previousBattleTerritories = useRef<Set<string>>(new Set())
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -70,6 +88,8 @@ function App() {
   const [commandOpen, setCommandOpen] = useState(true)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(true)
+  const [productionOpen, setProductionOpen] = useState(false)
+  const [frontOpen, setFrontOpen] = useState(false)
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -421,9 +441,19 @@ function App() {
   useEffect(() => {
     if (!game || !game.running || game.phase !== 'running') return
 
+    const ticksPerPulse = game.speed === 10 ? 2 : 1
+    const intervalMs = (1000 * ticksPerPulse) / game.speed
+
     const interval = window.setInterval(() => {
-      setGame((previous) => (previous ? advanceTick(previous) : previous))
-    }, 1000 / game.speed)
+      setGame((previous) => {
+        if (!previous) return previous
+        let next = previous
+        for (let index = 0; index < ticksPerPulse; index += 1) {
+          next = advanceTick(next)
+        }
+        return next
+      })
+    }, intervalMs)
 
     return () => window.clearInterval(interval)
   }, [game?.running, game?.speed, game?.phase])
@@ -636,12 +666,14 @@ function App() {
 
       if (
         game.phase === 'running' &&
-        (event.key === '1' || event.key === '2' || event.key === '4')
+        (event.key === '1' ||
+          event.key === '2' ||
+          event.key === '4' ||
+          event.key === '0')
       ) {
+        const speed = (event.key === '0' ? 10 : Number(event.key)) as GameSpeed
         setGame((previous) =>
-          previous
-            ? { ...previous, speed: Number(event.key) as 1 | 2 | 4 }
-            : previous,
+          previous ? { ...previous, speed } : previous,
         )
         return
       }
@@ -724,7 +756,7 @@ function App() {
             >
               {game.running ? '일시정지' : '재개'}
             </button>
-            {([1, 2, 4] as const).map((speed) => (
+            {([1, 2, 4, 10] as const).map((speed) => (
               <button
                 key={speed}
                 className={game.speed === speed ? 'active' : ''}
@@ -789,7 +821,7 @@ function App() {
             </div>
 
             <p className="rules-tip">
-              기본 조작: 지도 클릭 = 선택/공격 · Space = 정지/재개 · 1/2/4 = 배속 · F = 선택 지역 확대
+              기본 조작: 지도 클릭 = 선택/공격 · Space = 정지/재개 · 1/2/4/0 = 배속(0은 ×10) · F = 선택 지역 확대
             </p>
           </section>
         )}
@@ -900,7 +932,7 @@ function App() {
           <section className="card national-stats-card">
             <div className="stats-heading">
               <p className="section-label">플레이어 현황</p>
-              <span>Space 일시정지 · 1/2/4 배속 · F 선택지역</span>
+              <span>Space 일시정지 · 1/2/4/10 배속 · F 선택지역</span>
             </div>
             <div className="national-stats-grid">
               <div>
@@ -989,7 +1021,7 @@ function App() {
                       previous
                         ? {
                             ...previous,
-                            playerName: event.target.value || '플레이어 세력',
+                            playerName: event.target.value,
                           }
                         : previous,
                     )
@@ -1032,7 +1064,7 @@ function App() {
                               ...previous,
                               aiNames: {
                                 ...previous.aiNames,
-                                [id]: event.target.value || factions[id].name,
+                                [id]: event.target.value,
                               },
                             }
                           : previous,
