@@ -374,6 +374,16 @@ const strategyPreparation: Record<StrategyDoctrine, number> = {
   logistics: 1.02,
 }
 
+export const TECHNOLOGY_IDS = Object.keys(
+  technologyDefinitions,
+) as TechnologyId[]
+
+function zeroTechnologyLevels(): Record<TechnologyId, number> {
+  return Object.fromEntries(
+    TECHNOLOGY_IDS.map((technology) => [technology, 0]),
+  ) as Record<TechnologyId, number>
+}
+
 const STARTING_FUNDS = 320
 const DIVISION_POWER = 100
 const DEFENSE_POWER = 60
@@ -575,9 +585,12 @@ export function playerDivisions(state: GameState): DivisionUnit[] {
     )
 }
 
-export function playerArmies(state: GameState): ArmyGroup[] {
+export function armiesForOwner(
+  state: GameState,
+  owner: PlayableFactionId,
+): ArmyGroup[] {
   return Object.values(state.armies)
-    .filter((army) => army.owner === 'player')
+    .filter((army) => army.owner === owner)
     .sort(
       (a, b) =>
         a.createdTick - b.createdTick ||
@@ -585,39 +598,85 @@ export function playerArmies(state: GameState): ArmyGroup[] {
     )
 }
 
-function nextArmyOrdinal(state: GameState): number {
-  return playerArmies(state).length + 1
+export function playerArmies(state: GameState): ArmyGroup[] {
+  return armiesForOwner(state, 'player')
 }
 
-export function createArmy(state: GameState): GameState {
-  if (state.phase !== 'running') return state
+function nextArmyOrdinal(
+  state: GameState,
+  owner: PlayableFactionId,
+): number {
+  return armiesForOwner(state, owner).length + 1
+}
 
-  const ordinal = nextArmyOrdinal(state)
-  const id = `player-army-${state.tick}-${ordinal}`
+function createArmyGroup(
+  state: GameState,
+  owner: PlayableFactionId,
+  name?: string,
+  strategy: StrategyDoctrine = 'balanced',
+): { state: GameState; army: ArmyGroup } {
+  const ordinal = nextArmyOrdinal(state, owner)
+  const id = `${owner}-army-${state.tick}-${ordinal}`
   const army: ArmyGroup = {
     id,
-    owner: 'player',
-    name: `제${ordinal}군`,
+    owner,
+    name:
+      name ??
+      (owner === 'player'
+        ? `제${ordinal}군단`
+        : `${actorName(state, owner)} 제${ordinal}군단`),
     commander: commanderName(`army:${id}`),
     divisionIds: [],
     objectiveId: null,
     planStatus: 'idle',
+    strategy,
     preparation: 0,
     createdTick: state.tick,
   }
 
-  return withEvent(
-    {
+  return {
+    army,
+    state: {
       ...state,
-      selectedArmyId: id,
+      selectedArmyId:
+        owner === 'player' ? id : state.selectedArmyId,
       armies: {
         ...state.armies,
         [id]: army,
       },
     },
+  }
+}
+
+export function createArmy(state: GameState): GameState {
+  if (state.phase !== 'running') return state
+
+  const created = createArmyGroup(state, 'player')
+  return withEvent(
+    created.state,
     'military',
-    `${army.name} 창설 · 지휘관 ${army.commander}`,
+    `${created.army.name} 창설 · 지휘관 ${created.army.commander}`,
   )
+}
+
+export function setArmyStrategy(
+  state: GameState,
+  armyId: string,
+  strategy: StrategyDoctrine,
+): GameState {
+  const army = state.armies[armyId]
+  if (!army || army.owner !== 'player') return state
+
+  return {
+    ...state,
+    armies: {
+      ...state.armies,
+      [armyId]: {
+        ...army,
+        strategy,
+      },
+    },
+  }
 }
 
 export function renameArmy(
