@@ -16,12 +16,15 @@ const VALID_DIFFICULTIES = new Set<Difficulty>(['easy', 'normal', 'hard'])
 
 type SavedTerritory = {
   owner: FactionId
-  troops: number
+  troops?: number
   supply: number
+  factories?: number
+  divisions?: number
+  defense?: number
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4
+  schema: 1 | 2 | 3 | 4 | 5
   savedAt: number
   tick: number
   speed: 1 | 2 | 4
@@ -33,6 +36,7 @@ type SavedGame = {
   difficulty?: Difficulty
   aiNames?: Record<AiFactionId, string>
   factionColors?: Record<PlayableFactionId, string>
+  funds?: Record<PlayableFactionId, number>
   events?: GameEvent[]
   territories: Record<string, SavedTerritory>
 }
@@ -58,12 +62,15 @@ export function saveGame(state: GameState): number {
         owner: territory.owner,
         troops: Math.round(territory.troops * 10) / 10,
         supply: Math.round(territory.supply * 10) / 10,
+        factories: territory.factories,
+        divisions: territory.divisions,
+        defense: territory.defense,
       },
     ]),
   )
 
   const payload: SavedGame = {
-    schema: 4,
+    schema: 5,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -75,6 +82,7 @@ export function saveGame(state: GameState): number {
     difficulty: state.difficulty,
     aiNames: state.aiNames,
     factionColors: state.factionColors,
+    funds: state.funds,
     events: state.events.slice(0, 40),
     territories,
   }
@@ -104,7 +112,8 @@ export function restoreGame(base: GameState): GameState | null {
       (saved.schema !== 1 &&
         saved.schema !== 2 &&
         saved.schema !== 3 &&
-        saved.schema !== 4) ||
+        saved.schema !== 4 &&
+        saved.schema !== 5) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -126,12 +135,24 @@ export function restoreGame(base: GameState): GameState | null {
       const supply = Number.isFinite(dynamic.supply)
         ? clamp(Number(dynamic.supply), 0, 100)
         : current.supply
+      const factories = Number.isFinite(dynamic.factories)
+        ? clamp(Math.floor(Number(dynamic.factories)), 0, 4)
+        : current.factories
+      const divisions = Number.isFinite(dynamic.divisions)
+        ? clamp(Math.floor(Number(dynamic.divisions)), 0, 99)
+        : Math.max(0, Math.round(troops / 35))
+      const defense = Number.isFinite(dynamic.defense)
+        ? clamp(Math.floor(Number(dynamic.defense)), 0, 4)
+        : current.defense
 
       territories[id] = {
         ...current,
         owner,
         troops,
         supply,
+        factories,
+        divisions,
+        defense,
       }
     }
 
@@ -164,6 +185,14 @@ export function restoreGame(base: GameState): GameState | null {
       }
     }
 
+    const funds = { ...base.funds }
+    for (const id of ['player', 'red', 'blue', 'green'] as PlayableFactionId[]) {
+      const value = saved.funds?.[id]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        funds[id] = clamp(Math.floor(value), 0, 999999)
+      }
+    }
+
     return {
       ...base,
       phase,
@@ -182,6 +211,7 @@ export function restoreGame(base: GameState): GameState | null {
       difficulty,
       aiNames,
       factionColors,
+      funds,
       events: Array.isArray(saved.events) ? saved.events.slice(0, 40) : base.events,
       territories,
     }
