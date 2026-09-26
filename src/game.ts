@@ -1381,12 +1381,25 @@ function movementTicks(
     2,
     Math.floor(Math.sqrt(distanceSquared(source.centroid, target.centroid)) * 5),
   )
+  const infrastructureModifier = Math.max(
+    0.68,
+    1 - source.industry.infrastructure * 0.055,
+  )
+  const logisticsModifier = Math.max(
+    0.82,
+    1 - source.industry.logistics * 0.035,
+  )
+
   return clamp(
     Math.ceil(
-      (2 + supplyPenalty + distancePenalty) * roleMoveMultiplier[role],
+      (2 + supplyPenalty + distancePenalty) *
+        roleMoveMultiplier[role] *
+        terrainMove[target.terrain] *
+        infrastructureModifier *
+        logisticsModifier,
     ),
     1,
-    7,
+    10,
   )
 }
 
@@ -2053,6 +2066,13 @@ function processBattles(state: GameState): GameState {
         0,
       ) / Math.max(1, attackers.length)
 
+    const attackerLogisticsTech =
+      next.technologies[battle.attacker]?.logisticsPlanning ?? 0
+    const defenderEngineeringTech =
+      target.owner === 'neutral'
+        ? 0
+        : next.technologies[target.owner]?.fieldEngineering ?? 0
+
     const attackerPower =
       attackers.reduce(
         (sum, division) =>
@@ -2062,10 +2082,12 @@ function processBattles(state: GameState): GameState {
         0,
       ) *
       (0.62 + averageAttackerSupply / 210) *
-      stancePower[battle.stance]
+      stancePower[battle.stance] *
+      terrainAttack[target.terrain] *
+      (1 + attackerLogisticsTech * 0.025)
 
     const defenderPower =
-      defenders.reduce(
+      (defenders.reduce(
         (sum, division) =>
           sum +
           divisionCombatPower(division, true) *
@@ -2073,8 +2095,10 @@ function processBattles(state: GameState): GameState {
         0,
       ) *
         (0.68 + target.supply / 220) +
-      target.defense * DEFENSE_POWER +
-      (target.owner === 'neutral' ? 20 : 35)
+        target.defense * DEFENSE_POWER +
+        (target.owner === 'neutral' ? 20 : 35)) *
+      terrainDefense[target.terrain] *
+      (1 + defenderEngineeringTech * 0.045)
 
     const ratio = attackerPower / Math.max(45, defenderPower)
     const jitter =
@@ -2483,12 +2507,22 @@ function recoverDivisions(state: GameState): GameState {
       100,
       division.organization + (territory.supply >= 55 ? 2.2 : 0.6),
     )
+    const militaryCapacity = territory.industry.military
     const strength = Math.min(
       100,
-      division.strength + (territory.supply >= 70 ? 0.35 : 0.08),
+      division.strength +
+        (territory.supply >= 70 ? 0.25 : 0.05) +
+        militaryCapacity * 0.08,
     )
+    const engineeringLevel =
+      state.technologies[division.owner]?.fieldEngineering ?? 0
     const entrenchGain =
-      division.role === 'guard' ? 4 : division.role === 'mobile' ? 1.8 : 3
+      (division.role === 'guard'
+        ? 4
+        : division.role === 'mobile'
+          ? 1.8
+          : 3) *
+      (1 + engineeringLevel * 0.1)
     const entrenchment = Math.min(
       100,
       division.entrenchment + entrenchGain,
@@ -2553,9 +2587,14 @@ function processArmyPlanning(state: GameState): GameState {
             ) /
             assigned.length /
             100
+      const commandLevel =
+        state.technologies[army.owner]?.commandNetwork ?? 0
       preparation = Math.min(
         100,
-        preparation + 1.2 + readiness * 1.8,
+        preparation +
+          1.2 +
+          readiness * 1.8 +
+          commandLevel * 0.45,
       )
     } else if (planStatus === 'executing') {
       preparation = Math.max(0, preparation - 1.5)
