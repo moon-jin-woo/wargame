@@ -721,9 +721,50 @@ function movementTicks(source: TerritoryState, target: TerritoryState): number {
   return clamp(2 + supplyPenalty + distancePenalty, 2, 6)
 }
 
-function isDivisionBusy(state: GameState, divisionId: string): boolean {
-  const division = state.divisionUnits[divisionId]
-  return Boolean(division && division.status !== 'idle')
+function findDivisionRoute(
+  state: GameState,
+  owner: PlayableFactionId,
+  fromId: string,
+  targetId: string,
+): string[] {
+  if (fromId === targetId) return []
+
+  const queue: string[] = [fromId]
+  const previous = new Map<string, string | null>([[fromId, null]])
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!
+    const current = state.territories[currentId]
+    if (!current) continue
+
+    for (const neighborId of current.neighbors) {
+      if (previous.has(neighborId)) continue
+      const neighbor = state.territories[neighborId]
+      if (!neighbor) continue
+
+      const allowed =
+        neighborId === targetId || neighbor.owner === owner
+      if (!allowed) continue
+
+      previous.set(neighborId, currentId)
+
+      if (neighborId === targetId) {
+        const path: string[] = []
+        let cursor: string | null = targetId
+
+        while (cursor && cursor !== fromId) {
+          path.unshift(cursor)
+          cursor = previous.get(cursor) ?? null
+        }
+
+        return path
+      }
+
+      queue.push(neighborId)
+    }
+  }
+
+  return []
 }
 
 function defenderIdsAt(
@@ -772,38 +813,44 @@ export function issueDivisionOrder(
     !target ||
     division.owner !== 'player' ||
     division.status !== 'idle' ||
-    !source.neighbors.includes(targetId)
+    targetId === source.id
   ) {
     return state
   }
 
-  if (target.owner === division.owner) {
-    const totalTicks = movementTicks(source, target)
-    const nextDivision: DivisionUnit = {
-      ...division,
-      status: 'moving',
-      order: {
-        type: 'move',
-        targetId,
-        totalTicks,
-        remainingTicks: totalTicks,
-        issuedTick: state.tick,
-      },
-    }
+  const path = findDivisionRoute(
+    state,
+    division.owner,
+    source.id,
+    targetId,
+  )
 
-    return withEvent(
-      setDivision(state, nextDivision),
-      'movement',
-      `${division.name} · ${source.name} → ${target.name} 이동 명령`,
-    )
+  if (path.length === 0) return state
+
+  const firstStep = state.territories[path[0]]
+  if (!firstStep) return state
+
+  const totalTicks = movementTicks(source, firstStep)
+  const orderType =
+    target.owner === division.owner ? 'move' : 'attack'
+
+  const nextDivision: DivisionUnit = {
+    ...division,
+    status: 'moving',
+    order: {
+      type: orderType,
+      targetId,
+      path,
+      totalTicks,
+      remainingTicks: totalTicks,
+      issuedTick: state.tick,
+    },
   }
 
-  return startDivisionBattle(
-    state,
-    divisionId,
-    targetId,
-    division.owner,
-    state.attackStance,
+  return withEvent(
+    setDivision(state, nextDivision),
+    'movement',
+    `${division.name} · ${source.name} → ${target.name} ${orderType === 'attack' ? '공격 이동' : '이동'} 명령`,
   )
 }
 
@@ -844,6 +891,7 @@ function startDivisionBattle(
       order: {
         type: 'attack',
         targetId,
+        path: [targetId],
         totalTicks: 0,
         remainingTicks: 0,
         issuedTick: state.tick,
@@ -1027,25 +1075,33 @@ function processMovement(state: GameState): GameState {
   let next = state
   let divisionUnits = { ...state.divisionUnits }
   let territories = state.territories
-  const completed: string[] = []
+  const captured: Array<{ territoryId: string; divisionId: string }> = []
+  const battleStarts: Array<{
+    divisionId: string
+    targetId: string
+    owner: PlayableFactionId
+  }> = []
 
-  for (const division of Object.values(state.divisionUnits)) {
-    if (division.status !== 'moving' || !division.order) continue
+  for (const original of Object.values(state.divisionUnits)) {
+    const division = divisionUnits[original.id]
+    if (!division || division.status !== 'moving' || !division.order) continue
 
-    const remainingTicks = division.order.remainingTicks - 1
+    const order = division.order
+    const remainingTicks = order.remainingTicks - 1
 
     if (remainingTicks > 0) {
       divisionUnits[division.id] = {
         ...division,
-        order: { ...division.order, remainingTicks },
+        order: { ...order, remainingTicks },
       }
       continue
     }
 
-    const target = territories[division.order.targetId]
+    const nextStepId = order.path[0]
+    const nextStep = territories[nextStepId]
     const source = territories[division.locationId]
 
-    if (!target || !source || !source.neighbors.includes(target.id)) {
+    if (!nextStep || !source || !source.neighbors.includes(nextStep.id)) {
       divisionUnits[division.id] = {
         ...division,
         status: 'idle',
@@ -1054,42 +1110,88 @@ function processMovement(state: GameState): GameState {
       continue
     }
 
-    const hostileUnits = Object.values(divisionUnits).filter(
-      (unit) =>
-        unit.locationId === target.id &&
-        unit.owner !== division.owner,
-    )
+    const finalStep = order.path.length === 1
 
     if (
-      target.owner !== division.owner &&
-      (hostileUnits.length > 0 || target.defense > 0)
+      finalStep &&
+      order.type === 'attack' &&
+      nextStep.owner !== division.owner
     ) {
       divisionUnits[division.id] = {
         ...division,
         status: 'idle',
         order: null,
       }
+      battleStarts.push({
+        divisionId: division.id,
+        targetId: nextStep.id,
+        owner: division.owner,
+      })
       continue
+    }
+
+    if (nextStep.owner !== division.owner) {
+      const hostileUnits = Object.values(divisionUnits).filter(
+        (unit) =>
+          unit.locationId === nextStep.id &&
+          unit.owner !== division.owner,
+      )
+
+      if (hostileUnits.length > 0 || nextStep.defense > 0) {
+        divisionUnits[division.id] = {
+          ...division,
+          status: 'idle',
+          order: null,
+        }
+        continue
+      }
+    }
+
+    const remainingPath = order.path.slice(1)
+    const arrivedAtFinal = remainingPath.length === 0
+    let nextOrder = null
+
+    if (!arrivedAtFinal) {
+      const following = territories[remainingPath[0]]
+      if (!following) {
+        divisionUnits[division.id] = {
+          ...division,
+          status: 'idle',
+          order: null,
+        }
+        continue
+      }
+
+      const legTicks = movementTicks(nextStep, following)
+      nextOrder = {
+        ...order,
+        path: remainingPath,
+        totalTicks: legTicks,
+        remainingTicks: legTicks,
+      }
     }
 
     divisionUnits[division.id] = {
       ...division,
-      locationId: target.id,
-      status: 'idle',
-      order: null,
-      organization: Math.max(35, division.organization - 4),
+      locationId: nextStep.id,
+      status: arrivedAtFinal ? 'idle' : 'moving',
+      order: nextOrder,
+      organization: Math.max(30, division.organization - 2.5),
     }
 
-    if (target.owner !== division.owner) {
+    if (nextStep.owner !== division.owner) {
       territories = {
         ...territories,
-        [target.id]: {
-          ...target,
+        [nextStep.id]: {
+          ...nextStep,
           owner: division.owner,
-          supply: Math.max(35, target.supply),
+          supply: Math.max(35, nextStep.supply),
         },
       }
-      completed.push(target.id)
+      captured.push({
+        territoryId: nextStep.id,
+        divisionId: division.id,
+      })
     }
   }
 
@@ -1099,9 +1201,25 @@ function processMovement(state: GameState): GameState {
     territories,
   })
 
-  for (const territoryId of completed) {
-    const territory = next.territories[territoryId]
-    const occupier = divisionsAt(next, territoryId)[0]
+  for (const battle of battleStarts) {
+    next = startDivisionBattle(
+      next,
+      battle.divisionId,
+      battle.targetId,
+      battle.owner,
+      battle.owner === 'player'
+        ? next.attackStance
+        : next.difficulty === 'hard'
+          ? 'aggressive'
+          : next.difficulty === 'easy'
+            ? 'cautious'
+            : 'balanced',
+    )
+  }
+
+  for (const capture of captured) {
+    const territory = next.territories[capture.territoryId]
+    const occupier = next.divisionUnits[capture.divisionId]
     next = withEvent(
       next,
       'capture',
