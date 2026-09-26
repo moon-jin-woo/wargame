@@ -44,6 +44,28 @@ import type {
 const SOURCE_ID = 'admin-dongs'
 const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
+type MapMode = 'control' | 'supply' | 'industry'
+
+function territoryMapColor(
+  territory: TerritoryState,
+  game: GameState,
+  mode: MapMode,
+): string {
+  if (mode === 'control') return ownerColor(territory.owner, game)
+
+  if (mode === 'supply') {
+    if (territory.supply >= 80) return '#6f8f73'
+    if (territory.supply >= 55) return '#a38b57'
+    if (territory.supply >= 30) return '#9b654d'
+    return '#70433f'
+  }
+
+  if (territory.factories >= 4) return '#d0b46e'
+  if (territory.factories === 3) return '#aa915d'
+  if (territory.factories === 2) return '#81724f'
+  if (territory.factories === 1) return '#5e5947'
+  return '#343a3a'
+}
 
 function formatStrategicTime(tick: number): string {
   const day = Math.floor(tick / 4) + 1
@@ -91,6 +113,7 @@ function App() {
   const [rulesOpen, setRulesOpen] = useState(true)
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
+  const [mapMode, setMapMode] = useState<MapMode>('control')
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -305,14 +328,20 @@ function App() {
     const affected = new Set<string>()
 
     for (const [id, territory] of Object.entries(game.territories)) {
-      const ownerKey = `${territory.owner}|${ownerColor(territory.owner, game)}`
+      const visualColor = territoryMapColor(territory, game, mapMode)
+      const ownerKey =
+        mapMode === 'control'
+          ? `${territory.owner}|${visualColor}`
+          : mapMode === 'supply'
+            ? `${mapMode}|${Math.round(territory.supply / 5)}|${visualColor}`
+            : `${mapMode}|${territory.factories}|${visualColor}`
 
       if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
           { source: SOURCE_ID, id },
           {
             owner: territory.owner,
-            color: ownerColor(territory.owner, game),
+            color: visualColor,
           },
         )
 
@@ -351,7 +380,7 @@ function App() {
         previousFrontlines.current[id] = frontline
       }
     }
-  }, [game?.territories, game?.factionColors, layerReady])
+  }, [game?.territories, game?.factionColors, layerReady, mapMode])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1162,6 +1191,17 @@ function App() {
           </div>
         )}
 
+        {game && mapMode !== 'control' && (
+          <div className="map-mode-legend">
+            <strong>{mapMode === 'supply' ? '보급 지도' : '산업 지도'}</strong>
+            <span>
+              {mapMode === 'supply'
+                ? '초록 = 안정 · 황색 = 주의 · 적갈색 = 취약'
+                : '밝을수록 산업 시설이 많음'}
+            </span>
+          </div>
+        )}
+
         <nav className="operations-dock">
           <button
             className={commandOpen ? 'active' : ''}
@@ -1191,6 +1231,20 @@ function App() {
             onClick={() => setSpeedOpen((open) => !open)}
           >
             시간
+          </button>
+          <button
+            disabled={!game}
+            onClick={() =>
+              setMapMode((mode) =>
+                mode === 'control'
+                  ? 'supply'
+                  : mode === 'supply'
+                    ? 'industry'
+                    : 'control',
+              )
+            }
+          >
+            지도 {mapMode === 'control' ? '영토' : mapMode === 'supply' ? '보급' : '산업'}
           </button>
           <button
             className={rulesOpen ? 'active' : ''}
