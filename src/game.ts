@@ -11,9 +11,12 @@ import type {
   FactionId,
   GameEventKind,
   GameState,
+  IndustryType,
   PlayableFactionId,
   ProductionKind,
   ProductionOrder,
+  TechnologyId,
+  TerrainType,
   TerritoryState,
 } from './types'
 
@@ -41,13 +44,114 @@ export const FACTORY_COST = 120
 export const DIVISION_COST = 80
 export const FACTORY_INCOME = 12
 export const ECONOMY_INTERVAL = 5
-export const MAX_FACTORIES = 4
+export const MAX_FACTORIES = 6
 export const MAX_DEFENSE = 4
+
+export const industryLabels: Record<IndustryType, string> = {
+  civilian: '민수산업',
+  military: '군수산업',
+  logistics: '물류센터',
+  infrastructure: '인프라',
+  research: '연구시설',
+}
+
+export const INDUSTRY_COSTS: Record<IndustryType, number> = {
+  civilian: 120,
+  military: 140,
+  logistics: 110,
+  infrastructure: 90,
+  research: 180,
+}
+
+export const INDUSTRY_MAX: Record<IndustryType, number> = {
+  civilian: 6,
+  military: 6,
+  logistics: 4,
+  infrastructure: 5,
+  research: 3,
+}
 
 export const PRODUCTION_TICKS: Record<ProductionKind, number> = {
   factory: 30,
+  civilian: 30,
+  military: 34,
+  logistics: 24,
+  infrastructure: 20,
+  research: 40,
   division: 12,
   defense: 16,
+}
+
+export const terrainLabels: Record<TerrainType, string> = {
+  urban: '도시',
+  plains: '평야',
+  hills: '구릉',
+  mountain: '산악',
+  forest: '산림',
+  coastal: '해안',
+  island: '도서',
+}
+
+const terrainMove: Record<TerrainType, number> = {
+  urban: 1.1,
+  plains: 0.92,
+  hills: 1.14,
+  mountain: 1.42,
+  forest: 1.22,
+  coastal: 1.04,
+  island: 1.36,
+}
+
+const terrainAttack: Record<TerrainType, number> = {
+  urban: 0.9,
+  plains: 1.05,
+  hills: 0.94,
+  mountain: 0.82,
+  forest: 0.9,
+  coastal: 1,
+  island: 0.86,
+}
+
+const terrainDefense: Record<TerrainType, number> = {
+  urban: 1.18,
+  plains: 0.98,
+  hills: 1.08,
+  mountain: 1.24,
+  forest: 1.12,
+  coastal: 1.04,
+  island: 1.16,
+}
+
+const terrainSupply: Record<TerrainType, number> = {
+  urban: 1.08,
+  plains: 1.05,
+  hills: 0.96,
+  mountain: 0.8,
+  forest: 0.9,
+  coastal: 1,
+  island: 0.76,
+}
+
+export const technologyLabels: Record<TechnologyId, string> = {
+  industrialMethods: '산업 공정',
+  logisticsPlanning: '물류 계획',
+  commandNetwork: '지휘 통신',
+  fieldEngineering: '야전 공학',
+}
+
+export const TECHNOLOGY_MAX_LEVEL = 3
+
+export function technologyCost(
+  technology: TechnologyId,
+  level: number,
+): number {
+  const base: Record<TechnologyId, number> = {
+    industrialMethods: 90,
+    logisticsPlanning: 85,
+    commandNetwork: 95,
+    fieldEngineering: 80,
+  }
+  return base[technology] + level * 55
 }
 
 const STARTING_FUNDS = 320
