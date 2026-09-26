@@ -42,7 +42,7 @@ function App() {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const territoryCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const previousTerritories = useRef<Record<string, TerritoryState>>({})
+  const previousOwners = useRef<Record<string, string>>({})
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
 
@@ -54,6 +54,10 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [savedAt, setSavedAt] = useState<number | null>(() => getSavedAt())
   const [territoryRenderCount, setTerritoryRenderCount] = useState<number | null>(null)
+  const [canvasFallbackActive, setCanvasFallbackActive] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(true)
+  const [speedOpen, setSpeedOpen] = useState(false)
+  const [rulesOpen, setRulesOpen] = useState(true)
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -211,9 +215,7 @@ function App() {
     const clickHandler = (event: maplibregl.MapLayerMouseEvent) => {
       const id = event.features?.[0]?.properties?.gameId
       if (!id) return
-      setGame((previous) =>
-        previous ? { ...previous, selectedId: String(id) } : previous,
-      )
+      handleTerritoryCommand(String(id))
     }
 
     const enterHandler = () => {
@@ -242,7 +244,7 @@ function App() {
     map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
     map.on('render', detectTerritories)
 
-    previousTerritories.current = {}
+    previousOwners.current = {}
     previousFrontlines.current = {}
     previousSelected.current = null
     setLayerReady(true)
@@ -259,18 +261,39 @@ function App() {
     const map = mapRef.current
     if (!map || !layerReady || !game) return
 
+    const firstSync = Object.keys(previousOwners.current).length === 0
+    const affected = new Set<string>()
+
     for (const [id, territory] of Object.entries(game.territories)) {
-      if (previousTerritories.current[id] !== territory) {
+      const ownerKey = `${territory.owner}|${ownerColor(territory.owner, game)}`
+
+      if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
           { source: SOURCE_ID, id },
           {
             owner: territory.owner,
             color: ownerColor(territory.owner, game),
-            troops: territory.troops,
-            supply: territory.supply,
           },
         )
+
+        previousOwners.current[id] = ownerKey
+        affected.add(id)
+
+        for (const neighborId of territory.neighbors) {
+          affected.add(neighborId)
+        }
       }
+    }
+
+    if (firstSync) {
+      for (const id of Object.keys(game.territories)) {
+        affected.add(id)
+      }
+    }
+
+    for (const id of affected) {
+      const territory = game.territories[id]
+      if (!territory) continue
 
       const frontline =
         territory.owner !== 'neutral' &&
@@ -288,9 +311,7 @@ function App() {
         previousFrontlines.current[id] = frontline
       }
     }
-
-    previousTerritories.current = game.territories
-  }, [game?.territories, layerReady])
+  }, [game?.territories, game?.factionColors, layerReady])
 
   useEffect(() => {
     const map = mapRef.current
@@ -314,9 +335,27 @@ function App() {
   }, [game?.selectedId, layerReady])
 
   useEffect(() => {
+    if (!game || territoryRenderCount) {
+      setCanvasFallbackActive(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setCanvasFallbackActive(true)
+    }, 2500)
+
+    return () => window.clearTimeout(timer)
+  }, [game, territoryRenderCount])
+
+  useEffect(() => {
     const map = mapRef.current
     const canvas = territoryCanvasRef.current
     if (!map || !canvas || !mapLoaded || !adminData || !game) return
+
+    if (!canvasFallbackActive) {
+      canvas.style.opacity = '0'
+      return
+    }
 
     let frame = 0
 
@@ -340,11 +379,7 @@ function App() {
       )
 
       if (!id) return
-      setGame((previous) =>
-        previous && previous.territories[id]
-          ? { ...previous, selectedId: id }
-          : previous,
-      )
+      handleTerritoryCommand(id)
     }
 
     map.on('movestart', hide)
@@ -360,7 +395,13 @@ function App() {
       map.off('resize', draw)
       map.off('click', fallbackClick)
     }
-  }, [adminData, game?.territories, game?.selectedId, mapLoaded])
+  }, [
+    adminData,
+    game?.territories,
+    game?.selectedId,
+    mapLoaded,
+    canvasFallbackActive,
+  ])
 
   useEffect(() => {
     if (!game || !game.running || game.phase !== 'running') return
@@ -475,6 +516,28 @@ function App() {
       },
     }
   }, [game, selected])
+
+  const handleTerritoryCommand = (targetId: string) => {
+    setGame((previous) => {
+      if (!previous || !previous.territories[targetId]) return previous
+
+      const sourceId = previous.selectedId
+      const source = sourceId ? previous.territories[sourceId] : null
+      const target = previous.territories[targetId]
+
+      if (
+        previous.phase === 'running' &&
+        source &&
+        source.owner === 'player' &&
+        target.owner !== 'player' &&
+        source.neighbors.includes(targetId)
+      ) {
+        return captureTerritory(previous, source.id, targetId)
+      }
+
+      return { ...previous, selectedId: targetId }
+    })
+  }
 
   const focusSelected = () => {
     if (!selected || !mapRef.current) return
