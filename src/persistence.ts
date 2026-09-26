@@ -13,6 +13,7 @@ import type {
   GameSpeed,
   GameState,
   IndustryState,
+  NationalStrategy,
   PlayableFactionId,
   ProductionOrder,
   StrategyDoctrine,
@@ -48,6 +49,14 @@ const TECHNOLOGIES: TechnologyId[] = [
   'fieldEngineering',
   'defensiveWorks',
   'mobilityEngineering',
+  'industrialAutomation',
+  'regionalPlanning',
+  'networkScheduling',
+  'depotManagement',
+  'armyGroupCommand',
+  'rapidRedeployment',
+  'terrainAdaptation',
+  'civilEngineering',
 ]
 
 const STRATEGIES = new Set<StrategyDoctrine>([
@@ -56,6 +65,15 @@ const STRATEGIES = new Set<StrategyDoctrine>([
   'concentrated',
   'defensive',
   'logistics',
+])
+
+const NATIONAL_STRATEGIES = new Set<NationalStrategy>([
+  'balancedDevelopment',
+  'industrialPush',
+  'railwayPriority',
+  'mobileCommand',
+  'fortifiedState',
+  'researchInitiative',
 ])
 
 type SavedTerritory = {
@@ -71,7 +89,7 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11
   savedAt: number
   tick: number
   speed: GameSpeed
@@ -91,6 +109,7 @@ type SavedGame = {
     PlayableFactionId,
     Record<TechnologyId, number>
   >
+  nationalStrategies?: Record<PlayableFactionId, NationalStrategy>
   attackStance?: AttackStance
   autoOffensive?: boolean
   events?: GameEvent[]
@@ -361,6 +380,10 @@ function validArmies(
       objectiveId,
       planStatus,
       strategy,
+      theater:
+        typeof army.theater === 'string'
+          ? army.theater.slice(0, 24)
+          : null,
       preparation: clamp(Number(army.preparation) || 0, 0, 100),
       createdTick: Math.max(0, Math.floor(army.createdTick || 0)),
     }
@@ -429,7 +452,7 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 10,
+    schema: 11,
     savedAt,
     tick: state.tick,
     speed: state.speed,
@@ -446,6 +469,7 @@ export function saveGame(state: GameState): number {
     funds: state.funds,
     researchPoints: state.researchPoints,
     technologies: state.technologies,
+    nationalStrategies: state.nationalStrategies,
     attackStance: state.attackStance,
     autoOffensive: state.autoOffensive,
     events: state.events.slice(0, 80),
@@ -487,7 +511,8 @@ export function restoreGame(base: GameState): GameState | null {
         saved.schema !== 7 &&
         saved.schema !== 8 &&
         saved.schema !== 9 &&
-        saved.schema !== 10) ||
+        saved.schema !== 10 &&
+        saved.schema !== 11) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -570,7 +595,7 @@ export function restoreGame(base: GameState): GameState | null {
     }
 
     const divisionUnits =
-      saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10
+      saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11 || saved.schema === 11
         ? validDivisionUnits(saved.divisionUnits, territories)
         : migrateLegacyDivisionCounts(
             territories,
@@ -638,6 +663,14 @@ export function restoreGame(base: GameState): GameState | null {
       }
     }
 
+    const nationalStrategies = { ...base.nationalStrategies }
+    for (const id of ['player', 'red', 'blue', 'green'] as PlayableFactionId[]) {
+      const strategy = saved.nationalStrategies?.[id]
+      if (NATIONAL_STRATEGIES.has(strategy as NationalStrategy)) {
+        nationalStrategies[id] = strategy as NationalStrategy
+      }
+    }
+
     const attackStance = VALID_STANCES.has(saved.attackStance as AttackStance)
       ? (saved.attackStance as AttackStance)
       : base.attackStance
@@ -651,7 +684,7 @@ export function restoreGame(base: GameState): GameState | null {
           )?.id ?? null
 
     const armies =
-      saved.schema === 8 || saved.schema === 9 || saved.schema === 10
+      saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11
         ? validArmies(saved.armies, territories, divisionUnits)
         : {}
 
@@ -692,6 +725,7 @@ export function restoreGame(base: GameState): GameState | null {
       funds,
       researchPoints,
       technologies,
+      nationalStrategies,
       attackStance,
       autoOffensive:
         typeof saved.autoOffensive === 'boolean'
@@ -705,7 +739,7 @@ export function restoreGame(base: GameState): GameState | null {
         territories,
       ),
       battles:
-        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10
+        saved.schema === 7 || saved.schema === 8 || saved.schema === 9 || saved.schema === 10 || saved.schema === 11 || saved.schema === 11
           ? validBattles(saved.battles, territories, divisionUnits)
           : [],
       divisionUnits,
