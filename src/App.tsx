@@ -575,23 +575,23 @@ function App() {
     const map = mapRef.current
     if (!map || !layerReady || !game) return
 
-    const divisionSource = map.getSource(DIVISION_SOURCE_ID)
-    const orderSource = map.getSource(DIVISION_ORDER_SOURCE_ID)
+    const divisionSource = map.getSource(
+      DIVISION_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    const orderSource = map.getSource(
+      DIVISION_ORDER_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
 
-    if (divisionSource?.type === 'geojson') {
-      divisionSource.setData(
-        buildDivisionFeatureCollection(game, selectedDivisionIds) as never,
-      )
-    }
+    divisionSource?.setData(
+      buildDivisionFeatureCollection(game, selectedDivisionIds) as never,
+    )
 
-    if (orderSource?.type === 'geojson') {
-      orderSource.setData(
-        buildDivisionOrderFeatureCollection(
-          game,
-          selectedDivisionIds,
-        ) as never,
-      )
-    }
+    orderSource?.setData(
+      buildDivisionOrderFeatureCollection(
+        game,
+        selectedDivisionIds,
+      ) as never,
+    )
   }, [
     game?.divisions,
     game?.factionColors,
