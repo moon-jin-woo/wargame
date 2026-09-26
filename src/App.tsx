@@ -791,7 +791,7 @@ function App() {
       if (territory.owner !== 'player') continue
       playerDivisions += territory.divisions
       playerFactories += territory.factories
-      playerMilitaryPower += territoryMilitaryPower(territory)
+      playerMilitaryPower += territoryMilitaryPower(territory, game)
       playerSupply += territory.supply
 
       if (
@@ -931,22 +931,62 @@ function App() {
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
-      const sourceId = previous.selectedId
-      const source = sourceId ? previous.territories[sourceId] : null
-      const target = previous.territories[targetId]
+      const divisionId = previous.selectedDivisionId
+      const division = divisionId
+        ? previous.divisionUnits[divisionId]
+        : null
 
       if (
         previous.phase === 'running' &&
-        source &&
-        source.owner === 'player' &&
-        target.owner !== 'player' &&
-        source.neighbors.includes(targetId)
+        division &&
+        division.owner === 'player' &&
+        division.status === 'idle' &&
+        targetId !== division.locationId
       ) {
-        return captureTerritory(previous, source.id, targetId)
+        const ordered = issueDivisionOrder(
+          previous,
+          division.id,
+          targetId,
+        )
+
+        if (ordered !== previous) {
+          return {
+            ...ordered,
+            selectedId: targetId,
+            selectedDivisionId: division.id,
+          }
+        }
       }
 
       return { ...previous, selectedId: targetId }
     })
+  }
+
+  const selectDivision = (divisionId: string) => {
+    setGame((previous) => {
+      if (!previous) return previous
+      const division = previous.divisionUnits[divisionId]
+      if (!division || division.owner !== 'player') return previous
+
+      return {
+        ...previous,
+        selectedDivisionId: division.id,
+        selectedId: division.locationId,
+      }
+    })
+
+    const division = game?.divisionUnits[divisionId]
+    const territory = division
+      ? game?.territories[division.locationId]
+      : null
+
+    if (territory && mapRef.current) {
+      mapRef.current.easeTo({
+        center: territory.centroid,
+        zoom: Math.max(mapRef.current.getZoom(), 8),
+        duration: 420,
+      })
+    }
   }
 
   const focusSelected = () => {
@@ -1835,7 +1875,7 @@ function App() {
 
             <div className="military-power-row">
               <span>지역 군사력</span>
-              <strong>{territoryMilitaryPower(selected).toLocaleString()}</strong>
+              <strong>{territoryMilitaryPower(selected, game).toLocaleString()}</strong>
             </div>
 
             {selectedBattle && (
