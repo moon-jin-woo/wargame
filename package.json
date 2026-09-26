@@ -8,7 +8,8 @@
     "build": "npm run prepare:data && tsc --noEmit -p tsconfig.app.json && vite build",
     "check": "tsc --noEmit -p tsconfig.app.json",
     "preview": "vite preview",
-    "prepare:data": "node scripts/prepare-admin-data.mjs"
+    "prepare:data": "node scripts/prepare-admin-data.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "maplibre-gl": "^6.11.2",
@@ -21,6 +22,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^5.9.2",
     "vite": "^8.3.1",
-    "admdongkor": "0.5.1"
+    "admdongkor": "0.5.1",
+    "vitest": "^5.0.2"
   }
 }
