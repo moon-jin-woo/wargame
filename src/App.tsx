@@ -129,6 +129,13 @@ function territoryMapColor(
     return TERRAIN_COLORS[territory.terrain]
   }
 
+  if (mode === 'railway') {
+    if (territory.railway >= 3) return '#d7c182'
+    if (territory.railway === 2) return '#9e8c65'
+    if (territory.railway === 1) return '#655f4f'
+    return '#303737'
+  }
+
   const industryLevel =
     territory.industry.civilian +
     territory.industry.military +
@@ -361,6 +368,35 @@ function App() {
         'line-width': 2.4,
         'line-opacity': 0.9,
         'line-dasharray': [2, 1.5],
+      },
+    })
+
+    map.addSource(RAILWAY_SOURCE_ID, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [],
+      },
+    })
+
+    map.addLayer({
+      id: RAILWAY_LAYER_ID,
+      type: 'line',
+      source: RAILWAY_SOURCE_ID,
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['get', 'level'],
+          1,
+          1.2,
+          2,
+          2.2,
+          3,
+          3.2,
+        ],
+        'line-opacity': 0.32,
       },
     })
 
@@ -737,6 +773,20 @@ function App() {
     () => (game ? playerArmies(game) : []),
     [game?.armies],
   )
+  const hqArmyList = useMemo(
+    () => (game ? armiesForOwner(game, hqFaction) : []),
+    [game?.armies, hqFaction],
+  )
+
+  const hqDivisionList = useMemo(
+    () =>
+      game
+        ? Object.values(game.divisionUnits).filter(
+            (division) => division.owner === hqFaction,
+          )
+        : [],
+    [game?.divisionUnits, hqFaction],
+  )
 
   const playerDivisionList = useMemo(
     () => (game ? playerDivisions(game) : []),
@@ -946,6 +996,63 @@ function App() {
       map.off('mouseleave', DIVISION_COUNTER_LAYER_ID, leaveHandler)
     }
   }, [layerReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady || !game) return
+
+    const source = map.getSource(
+      RAILWAY_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+
+    const features: Array<{
+      type: 'Feature'
+      properties: { level: number; color: string }
+      geometry: {
+        type: 'LineString'
+        coordinates: [number, number][]
+      }
+    }> = []
+
+    for (const territory of Object.values(game.territories)) {
+      if (territory.railway <= 0) continue
+
+      for (const neighborId of territory.neighbors) {
+        if (territory.id >= neighborId) continue
+        const neighbor = game.territories[neighborId]
+        if (!neighbor || neighbor.railway <= 0) continue
+
+        const level = Math.min(territory.railway, neighbor.railway)
+        const sameOwner = territory.owner === neighbor.owner
+        features.push({
+          type: 'Feature',
+          properties: {
+            level,
+            color:
+              sameOwner && territory.owner !== 'neutral'
+                ? ownerColor(territory.owner, game)
+                : '#8b8069',
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: [territory.centroid, neighbor.centroid],
+          },
+        })
+      }
+    }
+
+    source.setData({
+      type: 'FeatureCollection',
+      features,
+    })
+
+    map.setPaintProperty(
+      RAILWAY_LAYER_ID,
+      'line-opacity',
+      mapMode === 'railway' ? 0.95 : 0.3,
+    )
+  }, [game?.territories, game?.factionColors, layerReady, mapMode])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1580,11 +1687,11 @@ function App() {
         )}
 
         {game?.phase === 'running' && researchOpen && (
-          <section className="floating-panel research-panel">
+          <section className="floating-panel research-panel deep-tech-panel">
             <div className="floating-panel-head">
               <div>
                 <p className="eyebrow">국가 연구</p>
-                <h2>연구 / 체계 개선</h2>
+                <h2>기술 트리</h2>
               </div>
               <button onClick={() => setResearchOpen(false)}>닫기</button>
             </div>
@@ -1602,60 +1709,107 @@ function App() {
               </div>
             </div>
 
-            <div className="technology-list">
-              {TECHNOLOGY_TYPES.map((technology) => {
-                const level = game.technologies.player[technology]
-                const maxed = level >= TECHNOLOGY_MAX_LEVEL
-                const cost = maxed
-                  ? 0
-                  : technologyCost(technology, level)
+            <div className="technology-tree">
+              {(
+                ['industry', 'logistics', 'command', 'engineering'] as TechnologyCategory[]
+              ).map((category) => (
+                <section key={category} className="technology-branch">
+                  <header>
+                    <strong>{technologyCategories[category].label}</strong>
+                    <span>{technologyCategories[category].description}</span>
+                  </header>
+                  <div className="technology-list">
+                    {TECHNOLOGY_IDS.filter(
+                      (technology) =>
+                        technologyDefinitions[technology].category === category,
+                    ).map((technology) => {
+                      const definition = technologyDefinitions[technology]
+                      const level = game.technologies.player[technology] ?? 0
+                      const maxed = level >= definition.maxLevel
+                      const available = technologyAvailable(
+                        game,
+                        'player',
+                        technology,
+                      )
+                      const cost = maxed
+                        ? 0
+                        : technologyCost(technology, level)
+                      const prerequisites = Object.entries(
+                        definition.prerequisites,
+                      )
 
-                return (
-                  <div key={technology} className="technology-row">
-                    <div className="technology-row-head">
-                      <div>
-                        <strong>{technologyLabels[technology]}</strong>
-                        <span>{technologyDescription(technology)}</span>
-                      </div>
-                      <b>Lv.{level}</b>
-                    </div>
-                    <div className="technology-pips">
-                      {Array.from({ length: TECHNOLOGY_MAX_LEVEL }).map(
-                        (_, index) => (
-                          <i
-                            key={index}
-                            className={index < level ? 'active' : ''}
-                          />
-                        ),
-                      )}
-                    </div>
-                    <button
-                      disabled={
-                        maxed ||
-                        game.researchPoints.player < cost
-                      }
-                      onClick={() =>
-                        setGame((previous) =>
-                          previous
-                            ? researchTechnology(
-                                previous,
-                                'player',
-                                technology,
+                      return (
+                        <div
+                          key={technology}
+                          className={`technology-row ${available || maxed ? '' : 'locked'}`}
+                        >
+                          <div className="technology-row-head">
+                            <div>
+                              <strong>{technologyLabels[technology]}</strong>
+                              <span>{technologyDescription(technology)}</span>
+                            </div>
+                            <b>
+                              Lv.{level}/{definition.maxLevel}
+                            </b>
+                          </div>
+
+                          {prerequisites.length > 0 && (
+                            <small className="technology-prereq">
+                              선행:{' '}
+                              {prerequisites
+                                .map(
+                                  ([required, requiredLevel]) =>
+                                    `${technologyLabels[required as TechnologyId]} Lv.${requiredLevel}`,
+                                )
+                                .join(' · ')}
+                            </small>
+                          )}
+
+                          <div className="technology-pips">
+                            {Array.from({ length: definition.maxLevel }).map(
+                              (_, index) => (
+                                <i
+                                  key={index}
+                                  className={index < level ? 'active' : ''}
+                                />
+                              ),
+                            )}
+                          </div>
+                          <button
+                            disabled={
+                              maxed ||
+                              !available ||
+                              game.researchPoints.player < cost
+                            }
+                            onClick={() =>
+                              setGame((previous) =>
+                                previous
+                                  ? researchTechnology(
+                                      previous,
+                                      'player',
+                                      technology,
+                                    )
+                                  : previous,
                               )
-                            : previous,
-                        )
-                      }
-                    >
-                      {maxed ? '최대 단계' : `연구 ${cost}점`}
-                    </button>
+                            }
+                          >
+                            {maxed
+                              ? '완료'
+                              : !available
+                                ? '선행 연구 필요'
+                                : `연구 ${cost}점`}
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
-                )
-              })}
+                </section>
+              ))}
             </div>
           </section>
         )}
 
-        {game?.phase === 'running' && frontOpen && (
+                {game?.phase === 'running' && frontOpen && (
           <section className="floating-panel front-panel">
             <div className="floating-panel-head">
               <div>
@@ -2671,8 +2825,8 @@ function App() {
                 <strong>{terrainLabels[selected.terrain]}</strong>
               </div>
               <div>
-                <span>사단</span>
-                <strong>{selected.divisions}</strong>
+                <span>철도</span>
+                <strong>Lv.{selected.railway} / {MAX_RAILWAY}</strong>
               </div>
               <div>
                 <span>방어</span>
@@ -2786,6 +2940,29 @@ function App() {
                       </span>
                     </button>
                   ))}
+
+                  <button
+                    disabled={
+                      Boolean(selectedOrder) ||
+                      selected.railway >= MAX_RAILWAY ||
+                      game.funds.player <
+                        RAILWAY_COST + selected.railway * 55
+                    }
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous
+                          ? buildRailway(previous, selected.id)
+                          : previous,
+                      )
+                    }
+                  >
+                    <strong>철도 확장</strong>
+                    <span>
+                      {selected.railway >= MAX_RAILWAY
+                        ? '최대 단계'
+                        : `Lv.${selected.railway} → Lv.${selected.railway + 1} · 비용 ${RAILWAY_COST + selected.railway * 55} · 보급/이동 효율 증가`}
+                    </span>
+                  </button>
 
                   <button
                     disabled={Boolean(selectedOrder) || game.funds.player < DIVISION_COST}
