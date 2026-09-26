@@ -69,10 +69,13 @@ describe('division save migration', () => {
       owner: 'player',
       name: '제7기동사단',
       commander: '김도현',
+      role: 'mobile',
+      armyId: 'army-test',
       locationId: 'a',
       strength: 83,
       organization: 67,
       experience: 14,
+      entrenchment: 12,
       status: 'moving',
       order: {
         type: 'move',
@@ -90,7 +93,21 @@ describe('division save migration', () => {
       phase: 'running' as const,
       tick: 5,
       selectedDivisionId: unit.id,
+      selectedArmyId: 'army-test',
       divisionUnits: { [unit.id]: unit },
+      armies: {
+        'army-test': {
+          id: 'army-test',
+          owner: 'player',
+          name: '제1군',
+          commander: '박준혁',
+          divisionIds: [unit.id],
+          objectiveId: 'b',
+          planStatus: 'planning',
+          preparation: 48,
+          createdTick: 2,
+        },
+      },
       territories: {
         ...base.territories,
         a: { ...base.territories.a, divisions: 1 },
@@ -104,7 +121,13 @@ describe('division save migration', () => {
     expect(restored?.divisionUnits[unit.id].name).toBe('제7기동사단')
     expect(restored?.divisionUnits[unit.id].commander).toBe('김도현')
     expect(restored?.divisionUnits[unit.id].order?.path).toEqual(['b'])
+    expect(restored?.divisionUnits[unit.id].role).toBe('mobile')
+    expect(restored?.divisionUnits[unit.id].entrenchment).toBe(12)
+    expect(restored?.divisionUnits[unit.id].armyId).toBe('army-test')
+    expect(restored?.armies['army-test'].commander).toBe('박준혁')
+    expect(restored?.armies['army-test'].preparation).toBe(48)
     expect(restored?.selectedDivisionId).toBe(unit.id)
+    expect(restored?.selectedArmyId).toBe('army-test')
   })
 
   it('migrates legacy numeric division counts into real units', () => {
@@ -143,7 +166,12 @@ describe('division save migration', () => {
     expect(restored?.territories.a.divisions).toBe(3)
     expect(
       Object.values(restored?.divisionUnits ?? {}).every(
-        (unit) => unit.locationId === 'a' && unit.owner === 'player',
+        (unit) =>
+          unit.locationId === 'a' &&
+          unit.owner === 'player' &&
+          unit.role === 'line' &&
+          unit.armyId === null &&
+          unit.entrenchment === 0,
       ),
     ).toBe(true)
   })
