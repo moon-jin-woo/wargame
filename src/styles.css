@@ -2176,3 +2176,401 @@ body {
     left: 8px;
   }
 }
+
+
+/* Division unit overhaul */
+.division-map-counter {
+  --division-color: #d0b46e;
+  position: relative;
+  display: inline-flex;
+  min-width: 34px;
+  height: 25px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 2px solid var(--division-color);
+  border-radius: 3px;
+  outline: 1px solid rgba(0, 0, 0, 0.75);
+  background: rgba(21, 23, 22, 0.94);
+  box-shadow: 0 3px 9px rgba(0, 0, 0, 0.42);
+  color: #f1ecdd;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.division-map-counter::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #161817;
+  border-radius: 50%;
+  background: #59615b;
+}
+
+.division-map-counter[data-moving='true']::after {
+  background: #c6a75f;
+}
+
+.division-map-counter[data-fighting='true']::after {
+  background: #b75c4d;
+}
+
+.division-map-counter[data-selected='true'] {
+  box-shadow:
+    0 0 0 2px #f0dfaa,
+    0 4px 12px rgba(0, 0, 0, 0.48);
+  transform: translateY(-2px);
+}
+
+.division-map-counter .division-symbol {
+  color: var(--division-color);
+  font-size: 9px;
+}
+
+.division-map-counter strong {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.army-panel {
+  width: min(470px, calc(100% - 28px));
+}
+
+.division-inspector {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid rgba(186, 169, 126, 0.28);
+  border-radius: 4px;
+  background: rgba(11, 13, 13, 0.7);
+}
+
+.division-inspector-title {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.division-counter-icon {
+  display: grid;
+  width: 28px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--ops-brass-soft);
+  background: #24251f;
+  color: var(--ops-brass);
+}
+
+.division-inspector-title > div {
+  min-width: 0;
+}
+
+.division-inspector-title strong,
+.division-inspector-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-inspector-title strong {
+  color: #ece7d8;
+  font-size: 11px;
+}
+
+.division-inspector-title span {
+  margin-top: 2px;
+  color: #898c84;
+  font-size: 8px;
+}
+
+.division-inspector-title > b {
+  color: var(--ops-brass);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+}
+
+.division-edit-field {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.division-edit-field > span {
+  color: #8c8e87;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.division-edit-field input {
+  min-width: 0;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(186, 169, 126, 0.24);
+  border-radius: 3px;
+  outline: none;
+  background: #111413;
+  color: #e5e1d4;
+  font-size: 10px;
+}
+
+.division-edit-field input:focus {
+  border-color: var(--ops-border-strong);
+}
+
+.division-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.division-stat-grid > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid rgba(186, 169, 126, 0.14);
+  background: rgba(28, 30, 28, 0.66);
+}
+
+.division-stat-grid span {
+  color: #858780;
+  font-size: 8px;
+}
+
+.division-stat-grid strong {
+  color: #dcd7c8;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.division-stat-grid i {
+  grid-column: 1 / -1;
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  background: #33352f;
+}
+
+.division-stat-grid i b {
+  display: block;
+  height: 100%;
+  background: var(--ops-brass);
+}
+
+.division-order-card,
+.division-order-hint {
+  padding: 9px;
+  border: 1px solid rgba(186, 169, 126, 0.18);
+  background: rgba(17, 19, 18, 0.68);
+}
+
+.division-order-card {
+  display: grid;
+  gap: 6px;
+}
+
+.division-order-card > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.division-order-card strong {
+  color: #dfdacb;
+  font-size: 9px;
+}
+
+.division-order-card span,
+.division-order-card small,
+.division-order-hint {
+  color: #8f9189;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.division-order-card button {
+  justify-self: start;
+  padding: 6px 8px;
+  border: 1px solid #654d45;
+  border-radius: 3px;
+  background: rgba(95, 49, 40, 0.18);
+  color: #c99788;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.division-list {
+  display: grid;
+  gap: 5px;
+}
+
+.division-list > button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.14);
+  border-radius: 3px;
+  background: rgba(12, 14, 14, 0.56);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.division-list > button:hover,
+.division-list > button.selected {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.09);
+}
+
+.division-list-symbol {
+  display: grid;
+  width: 22px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid var(--ops-brass-soft);
+  color: var(--ops-brass);
+  font-size: 8px;
+}
+
+.division-list > button > div:nth-child(2) {
+  min-width: 0;
+}
+
+.division-list strong,
+.division-list span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-list strong {
+  color: #e0dccf;
+  font-size: 9px;
+}
+
+.division-list span {
+  margin-top: 2px;
+  color: #858880;
+  font-size: 8px;
+}
+
+.division-list-state {
+  text-align: right;
+}
+
+.division-list-state b,
+.division-list-state small {
+  display: block;
+  white-space: nowrap;
+}
+
+.division-list-state b {
+  color: #aaa994;
+  font-size: 8px;
+}
+
+.division-list-state small {
+  margin-top: 2px;
+  color: #777b75;
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.territory-unit-roster {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(186, 169, 126, 0.16);
+}
+
+.territory-division-list {
+  display: grid;
+  gap: 5px;
+}
+
+.territory-division-list > button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(186, 169, 126, 0.14);
+  border-radius: 3px;
+  background: rgba(12, 14, 14, 0.48);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.territory-division-list > button:disabled {
+  cursor: default;
+}
+
+.territory-division-list > button.selected {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.08);
+}
+
+.mini-unit-counter {
+  display: grid;
+  width: 22px;
+  height: 19px;
+  place-items: center;
+  border: 1px solid;
+  color: #dcd8ca;
+  font-size: 7px;
+}
+
+.territory-division-list strong,
+.territory-division-list span {
+  display: block;
+}
+
+.territory-division-list strong {
+  font-size: 9px;
+}
+
+.territory-division-list span {
+  margin-top: 2px;
+  color: #858880;
+  font-size: 8px;
+}
+
+.territory-division-list small {
+  color: #80837c;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .army-panel {
+    width: auto;
+  }
+
+  .division-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .division-list > button {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .division-list-state {
+    grid-column: 2;
+    text-align: left;
+  }
+}
