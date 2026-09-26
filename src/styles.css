@@ -2176,3 +2176,315 @@ body {
     left: 8px;
   }
 }
+
+
+/* Division overhaul */
+.divisions-panel {
+  width: min(470px, calc(100% - 28px));
+}
+
+.division-panel-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #96978f;
+  font-size: 9px;
+}
+
+.division-list {
+  display: grid;
+  gap: 6px;
+}
+
+.division-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(186, 169, 126, 0.18);
+  border-radius: 4px;
+  background: rgba(10, 12, 12, 0.5);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.division-list-row:hover,
+.division-list-row.selected {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.1);
+}
+
+.division-list-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.division-list-main strong {
+  overflow: hidden;
+  color: #e5e0d2;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-list-main span {
+  overflow: hidden;
+  color: #8f928b;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-status-text {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 62px;
+}
+
+.division-status-text b {
+  color: var(--ops-brass);
+  font-size: 8px;
+}
+
+.division-status-text span {
+  color: #858780;
+  font-size: 8px;
+}
+
+.division-mini-bars {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #2a2d2b;
+}
+
+.division-mini-bars i {
+  position: absolute;
+  left: 0;
+  display: block;
+  height: 3px;
+}
+
+.division-mini-bars .strength {
+  top: 0;
+  background: #8a6f58;
+}
+
+.division-mini-bars .organization {
+  bottom: 0;
+  background: #6f8c79;
+}
+
+.division-command-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 67px;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: min(650px, calc(100% - 28px));
+  padding: 8px 10px;
+  border: 1px solid var(--ops-border-strong);
+  border-radius: 4px;
+  background: rgba(20, 23, 22, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
+  transform: translateX(-50%);
+  backdrop-filter: blur(12px);
+}
+
+.division-command-bar > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.division-command-bar strong {
+  overflow: hidden;
+  color: #e8e2d2;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-command-bar span {
+  overflow: hidden;
+  color: #8f928b;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-command-bar button {
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.26);
+  border-radius: 3px;
+  background: #1a1d1c;
+  color: #b9b5aa;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.division-command-bar button:hover {
+  border-color: var(--ops-border-strong);
+  color: var(--ops-brass);
+}
+
+.division-inspector {
+  border-left: 3px solid var(--ops-brass-soft);
+}
+
+.division-inspector-head {
+  margin-bottom: 10px;
+}
+
+.unit-status {
+  padding: 4px 7px;
+  border: 1px solid rgba(186, 169, 126, 0.22);
+  border-radius: 99px;
+  color: #a7a99f;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.unit-status.moving {
+  border-color: rgba(199, 170, 104, 0.5);
+  color: #c9ad70;
+}
+
+.unit-status.battle {
+  border-color: rgba(190, 98, 77, 0.55);
+  color: #d58a78;
+}
+
+.unit-status.recovering {
+  border-color: rgba(129, 128, 111, 0.5);
+  color: #aca68f;
+}
+
+.division-edit-field {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  color: #858780;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.division-edit-field input {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.2);
+  border-radius: 3px;
+  outline: none;
+  background: #111413;
+  color: #e4dfd1;
+  font-size: 10px;
+}
+
+.division-edit-field input:focus {
+  border-color: var(--ops-border-strong);
+}
+
+.division-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.division-stat-grid > div {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(186, 169, 126, 0.16);
+  border-radius: 3px;
+  background: rgba(10, 12, 12, 0.45);
+}
+
+.division-stat-grid span,
+.division-stat-grid strong {
+  display: block;
+}
+
+.division-stat-grid span {
+  color: #7e817b;
+  font-size: 7px;
+}
+
+.division-stat-grid strong {
+  margin-top: 3px;
+  overflow: hidden;
+  color: #dcd8cb;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.division-order-box {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid rgba(199, 170, 104, 0.24);
+  border-radius: 3px;
+  background: rgba(100, 83, 48, 0.08);
+}
+
+.division-order-box span {
+  color: var(--ops-brass);
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.division-order-box strong {
+  color: #e3ded0;
+  font-size: 9px;
+}
+
+.division-order-box small {
+  color: #898b84;
+  font-size: 8px;
+}
+
+.event-row.movement {
+  border-left: 2px solid #7f8fa1;
+}
+
+@media (max-width: 720px) {
+  .division-command-bar {
+    right: 8px;
+    bottom: 64px;
+    left: 8px;
+    width: auto;
+    transform: none;
+  }
+
+  .division-command-bar span {
+    display: none;
+  }
+
+  .operations-dock {
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .operations-dock button {
+    flex: 0 0 auto;
+    min-width: 58px;
+  }
+}
+
+@media (max-width: 420px) {
+  .division-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
