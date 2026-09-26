@@ -313,6 +313,7 @@ const features = sourceFeatures.map((feature, index) => {
       research: 0,
     },
     terrain,
+    railway: 0,
     divisions: 0,
     defense: 0,
     neighbors: Array.from(adjacency.get(id) ?? []).sort(),
