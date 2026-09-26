@@ -4,6 +4,7 @@ import type {
   AttackStance,
   BattleState,
   Difficulty,
+  DivisionUnit,
   FactionId,
   GameEvent,
   GamePhase,
@@ -15,6 +16,7 @@ import type {
 
 const SAVE_KEY = 'wargame-save-v1'
 const VALID_OWNERS = new Set<FactionId>(['player', 'red', 'blue', 'green', 'neutral'])
+const VALID_PLAYABLE = new Set<PlayableFactionId>(['player', 'red', 'blue', 'green'])
 const VALID_PHASES = new Set<GamePhase>(['setup', 'running', 'victory', 'defeat'])
 const VALID_DIFFICULTIES = new Set<Difficulty>(['easy', 'normal', 'hard'])
 const VALID_STANCES = new Set<AttackStance>(['cautious', 'balanced', 'aggressive'])
@@ -29,12 +31,13 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4 | 5 | 6
+  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7
   savedAt: number
   tick: number
   speed: GameSpeed
   phase: GamePhase
   selectedId: string | null
+  selectedDivisionId?: string | null
   playerName: string
   dataVersion: string
   aiCount?: AiCount
@@ -47,6 +50,7 @@ type SavedGame = {
   events?: GameEvent[]
   productionQueue?: ProductionOrder[]
   battles?: BattleState[]
+  divisionUnits?: Record<string, DivisionUnit>
   territories: Record<string, SavedTerritory>
 }
 
@@ -74,10 +78,7 @@ function validProductionOrders(
       const candidate = order as ProductionOrder
       return (
         typeof candidate.id === 'string' &&
-        (candidate.owner === 'player' ||
-          candidate.owner === 'red' ||
-          candidate.owner === 'blue' ||
-          candidate.owner === 'green') &&
+        VALID_PLAYABLE.has(candidate.owner) &&
         typeof candidate.territoryId === 'string' &&
         Boolean(territories[candidate.territoryId]) &&
         (candidate.kind === 'factory' ||
@@ -95,12 +96,158 @@ function validProductionOrders(
       remainingTicks: Math.max(1, Math.floor(order.remainingTicks)),
       queuedTick: Math.max(0, Math.floor(order.queuedTick || 0)),
     }))
-    .slice(0, 80)
+    .slice(0, 120)
+}
+
+function validDivisionUnits(
+  units: unknown,
+  territories: GameState['territories'],
+): Record<string, DivisionUnit> {
+  if (!units || typeof units !== 'object') return {}
+
+  const result: Record<string, DivisionUnit> = {}
+
+  for (const [id, value] of Object.entries(units)) {
+    if (!value || typeof value !== 'object') continue
+    const unit = value as DivisionUnit
+
+    if (
+      typeof unit.id !== 'string' ||
+      unit.id !== id ||
+      !VALID_PLAYABLE.has(unit.owner) ||
+      typeof unit.locationId !== 'string' ||
+      !territories[unit.locationId] ||
+      typeof unit.name !== 'string' ||
+      typeof unit.commander !== 'string'
+    ) {
+      continue
+    }
+
+    const status =
+      unit.status === 'moving' ||
+      unit.status === 'attacking' ||
+      unit.status === 'defending'
+        ? unit.status
+        : 'idle'
+
+    const order =
+      unit.order &&
+      (unit.order.type === 'move' || unit.order.type === 'attack') &&
+      territories[unit.order.targetId]
+        ? {
+            ...unit.order,
+            path: Array.isArray(unit.order.path)
+              ? unit.order.path.filter(
+                  (territoryId) =>
+                    typeof territoryId === 'string' &&
+                    Boolean(territories[territoryId]),
+                )
+              : [unit.order.targetId],
+            totalTicks: Math.max(0, Math.floor(unit.order.totalTicks || 0)),
+            remainingTicks: Math.max(
+              0,
+              Math.floor(unit.order.remainingTicks || 0),
+            ),
+            issuedTick: Math.max(0, Math.floor(unit.order.issuedTick || 0)),
+          }
+        : null
+
+    result[id] = {
+      ...unit,
+      name: unit.name.slice(0, 32),
+      commander: unit.commander.slice(0, 24),
+      strength: clamp(Number(unit.strength) || 0, 0, 100),
+      organization: clamp(Number(unit.organization) || 0, 0, 100),
+      experience: clamp(Number(unit.experience) || 0, 0, 100),
+      status,
+      order,
+      createdTick: Math.max(0, Math.floor(unit.createdTick || 0)),
+    }
+  }
+
+  return result
+}
+
+function migratedCommander(index: number): string {
+  const surnames = ['김', '이', '박', '최', '정', '강', '조', '윤']
+  const given = ['도현', '민재', '서준', '지훈', '현우', '준혁', '태윤', '시우']
+  return `${surnames[index % surnames.length]}${
+    given[Math.floor(index / surnames.length) % given.length]
+  }`
+}
+
+function migrateLegacyDivisionCounts(
+  territories: GameState['territories'],
+  saved: SavedGame,
+): Record<string, DivisionUnit> {
+  const result: Record<string, DivisionUnit> = {}
+  const ownerOrdinal: Record<PlayableFactionId, number> = {
+    player: 0,
+    red: 0,
+    blue: 0,
+    green: 0,
+  }
+
+  let globalIndex = 0
+
+  for (const [territoryId, territory] of Object.entries(territories)) {
+    if (!VALID_PLAYABLE.has(territory.owner as PlayableFactionId)) continue
+
+    const owner = territory.owner as PlayableFactionId
+    const savedCount = saved.territories[territoryId]?.divisions
+    const count = Number.isFinite(savedCount)
+      ? clamp(Math.floor(Number(savedCount)), 0, 24)
+      : 0
+
+    for (let index = 0; index < count; index += 1) {
+      ownerOrdinal[owner] += 1
+      globalIndex += 1
+      const ordinal = ownerOrdinal[owner]
+      const id = `migrated-${owner}-${territoryId}-${ordinal}`
+
+      result[id] = {
+        id,
+        owner,
+        name:
+          owner === 'player'
+            ? `제${ordinal}보병사단`
+            : `${owner.toUpperCase()}-${ordinal} 사단`,
+        commander: migratedCommander(globalIndex),
+        locationId: territoryId,
+        strength: 100,
+        organization: 80,
+        experience: 0,
+        status: 'idle',
+        order: null,
+        createdTick: Math.max(0, saved.tick || 0),
+      }
+    }
+  }
+
+  return result
+}
+
+function syncDivisionCounts(
+  territories: GameState['territories'],
+  divisionUnits: Record<string, DivisionUnit>,
+): GameState['territories'] {
+  const counts: Record<string, number> = {}
+  for (const division of Object.values(divisionUnits)) {
+    counts[division.locationId] = (counts[division.locationId] ?? 0) + 1
+  }
+
+  return Object.fromEntries(
+    Object.entries(territories).map(([id, territory]) => [
+      id,
+      { ...territory, divisions: counts[id] ?? 0 },
+    ]),
+  )
 }
 
 function validBattles(
   battles: unknown,
   territories: GameState['territories'],
+  divisionUnits: Record<string, DivisionUnit>,
 ): BattleState[] {
   if (!Array.isArray(battles)) return []
 
@@ -108,32 +255,33 @@ function validBattles(
     .filter((battle): battle is BattleState => {
       if (!battle || typeof battle !== 'object') return false
       const candidate = battle as BattleState
+
       return (
         typeof candidate.id === 'string' &&
-        (candidate.attacker === 'player' ||
-          candidate.attacker === 'red' ||
-          candidate.attacker === 'blue' ||
-          candidate.attacker === 'green') &&
+        VALID_PLAYABLE.has(candidate.attacker) &&
         VALID_OWNERS.has(candidate.defender) &&
         typeof candidate.fromId === 'string' &&
         typeof candidate.toId === 'string' &&
         Boolean(territories[candidate.fromId]) &&
         Boolean(territories[candidate.toId]) &&
-        Number.isFinite(candidate.committedDivisions) &&
-        Number.isFinite(candidate.progress) &&
+        Array.isArray(candidate.attackerDivisionIds) &&
+        Array.isArray(candidate.defenderDivisionIds) &&
         VALID_STANCES.has(candidate.stance)
       )
     })
     .map((battle) => ({
       ...battle,
-      committedDivisions: Math.max(
-        1,
-        Math.floor(battle.committedDivisions),
+      attackerDivisionIds: battle.attackerDivisionIds.filter((id) =>
+        Boolean(divisionUnits[id]),
+      ),
+      defenderDivisionIds: battle.defenderDivisionIds.filter((id) =>
+        Boolean(divisionUnits[id]),
       ),
       progress: clamp(Number(battle.progress), -99, 99),
       startedTick: Math.max(0, Math.floor(battle.startedTick || 0)),
     }))
-    .slice(0, 20)
+    .filter((battle) => battle.attackerDivisionIds.length > 0)
+    .slice(0, 30)
 }
 
 export function saveGame(state: GameState): number {
@@ -153,12 +301,13 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 6,
+    schema: 7,
     savedAt,
     tick: state.tick,
     speed: state.speed,
     phase: state.phase,
     selectedId: state.selectedId,
+    selectedDivisionId: state.selectedDivisionId,
     playerName: state.playerName,
     dataVersion: state.dataVersion,
     aiCount: state.aiCount,
@@ -168,9 +317,10 @@ export function saveGame(state: GameState): number {
     funds: state.funds,
     attackStance: state.attackStance,
     autoOffensive: state.autoOffensive,
-    events: state.events.slice(0, 60),
+    events: state.events.slice(0, 80),
     productionQueue: state.productionQueue,
     battles: state.battles,
+    divisionUnits: state.divisionUnits,
     territories,
   }
 
@@ -201,14 +351,15 @@ export function restoreGame(base: GameState): GameState | null {
         saved.schema !== 3 &&
         saved.schema !== 4 &&
         saved.schema !== 5 &&
-        saved.schema !== 6) ||
+        saved.schema !== 6 &&
+        saved.schema !== 7) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
       return null
     }
 
-    const territories = { ...base.territories }
+    let territories = { ...base.territories }
 
     for (const [id, dynamic] of Object.entries(saved.territories)) {
       const current = territories[id]
@@ -226,9 +377,6 @@ export function restoreGame(base: GameState): GameState | null {
       const factories = Number.isFinite(dynamic.factories)
         ? clamp(Math.floor(Number(dynamic.factories)), 0, 4)
         : current.factories
-      const divisions = Number.isFinite(dynamic.divisions)
-        ? clamp(Math.floor(Number(dynamic.divisions)), 0, 99)
-        : Math.max(0, Math.round(troops / 35))
       const defense = Number.isFinite(dynamic.defense)
         ? clamp(Math.floor(Number(dynamic.defense)), 0, 4)
         : current.defense
@@ -239,10 +387,20 @@ export function restoreGame(base: GameState): GameState | null {
         troops,
         supply,
         factories,
-        divisions,
+        divisions: 0,
         defense,
       }
     }
+
+    const divisionUnits =
+      saved.schema === 7
+        ? validDivisionUnits(saved.divisionUnits, territories)
+        : migrateLegacyDivisionCounts(
+            territories,
+            saved as SavedGame,
+          )
+
+    territories = syncDivisionCounts(territories, divisionUnits)
 
     const phase = VALID_PHASES.has(saved.phase as GamePhase)
       ? (saved.phase as GamePhase)
@@ -285,6 +443,14 @@ export function restoreGame(base: GameState): GameState | null {
       ? (saved.attackStance as AttackStance)
       : base.attackStance
 
+    const selectedDivisionId =
+      typeof saved.selectedDivisionId === 'string' &&
+      divisionUnits[saved.selectedDivisionId]?.owner === 'player'
+        ? saved.selectedDivisionId
+        : Object.values(divisionUnits).find(
+            (division) => division.owner === 'player',
+          )?.id ?? null
+
     return {
       ...base,
       phase,
@@ -295,6 +461,7 @@ export function restoreGame(base: GameState): GameState | null {
           ? Math.max(0, saved.tick)
           : base.tick,
       selectedId,
+      selectedDivisionId,
       playerName:
         typeof saved.playerName === 'string'
           ? saved.playerName.slice(0, 24)
@@ -310,13 +477,17 @@ export function restoreGame(base: GameState): GameState | null {
           ? saved.autoOffensive
           : base.autoOffensive,
       events: Array.isArray(saved.events)
-        ? saved.events.slice(0, 60)
+        ? saved.events.slice(0, 80)
         : base.events,
       productionQueue: validProductionOrders(
         saved.productionQueue,
         territories,
       ),
-      battles: validBattles(saved.battles, territories),
+      battles:
+        saved.schema === 7
+          ? validBattles(saved.battles, territories, divisionUnits)
+          : [],
+      divisionUnits,
       territories,
     }
   } catch {

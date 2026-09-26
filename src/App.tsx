@@ -6,8 +6,8 @@ import {
   attackStanceLabels,
   buildDivision,
   buildFactory,
+  cancelDivisionOrder,
   cancelProduction,
-  captureTerritory,
   createInitialState,
   defenseUpgradeCost,
   difficultyLabels,
@@ -15,15 +15,19 @@ import {
   ECONOMY_INTERVAL,
   FACTORY_COST,
   FACTORY_INCOME,
+  divisionsAt,
   factionIncomePerCycle,
   factions,
+  issueDivisionOrder,
   MAX_DEFENSE,
   MAX_FACTORIES,
   ownerCounts,
+  playerDivisions,
   productionDuration,
+  renameCommander,
+  renameDivision,
   startGame,
   territoryMilitaryPower,
-  transferTroops,
   upgradeDefense,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
@@ -34,6 +38,7 @@ import type {
   AiFactionId,
   Difficulty,
   AttackStance,
+  DivisionUnit,
   FactionId,
   GameSpeed,
   GameState,
@@ -44,6 +49,8 @@ import type {
 const SOURCE_ID = 'admin-dongs'
 const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
+const DIVISION_ROUTE_SOURCE_ID = 'division-route'
+const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
 type MapMode = 'control' | 'supply' | 'industry'
 
 function territoryMapColor(
@@ -79,6 +86,13 @@ function productionLabel(kind: ProductionKind): string {
   return '방어 공사'
 }
 
+function divisionStatusLabel(division: DivisionUnit): string {
+  if (division.status === 'moving') return '이동 중'
+  if (division.status === 'attacking') return '공격 중'
+  if (division.status === 'defending') return '방어 중'
+  return '대기'
+}
+
 function ownerName(owner: FactionId, game: GameState): string {
   if (owner === 'player') return game.playerName || '—'
   if (owner === 'neutral') return factions.neutral.name
@@ -98,6 +112,7 @@ function App() {
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
   const previousBattleTerritories = useRef<Set<string>>(new Set())
+  const divisionMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -113,6 +128,7 @@ function App() {
   const [rulesOpen, setRulesOpen] = useState(true)
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
+  const [armyOpen, setArmyOpen] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
   useEffect(() => {
@@ -247,6 +263,26 @@ function App() {
           ],
         ],
         'line-opacity': 0.98,
+      },
+    })
+
+    map.addSource(DIVISION_ROUTE_SOURCE_ID, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_LAYER_ID,
+      type: 'line',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      paint: {
+        'line-color': '#f0d48a',
+        'line-width': 2.4,
+        'line-opacity': 0.9,
+        'line-dasharray': [2, 1.5],
       },
     })
 
@@ -527,6 +563,225 @@ function App() {
   }, [game?.tick])
 
   const selected = game?.selectedId ? game.territories[game.selectedId] : null
+  const selectedDivision =
+    game?.selectedDivisionId
+      ? game.divisionUnits[game.selectedDivisionId] ?? null
+      : null
+
+  const playerDivisionList = useMemo(
+    () => (game ? playerDivisions(game) : []),
+    [game?.divisionUnits],
+  )
+
+  const divisionsHere = useMemo(
+    () => (game && selected ? divisionsAt(game, selected.id) : []),
+    [game?.divisionUnits, selected?.id],
+  )
+
+  const divisionStacks = useMemo(() => {
+    if (!game) return []
+
+    const grouped = new Map<
+      string,
+      {
+        key: string
+        territoryId: string
+        owner: DivisionUnit['owner']
+        ids: string[]
+        moving: number
+        fighting: number
+      }
+    >()
+
+    for (const division of Object.values(game.divisionUnits)) {
+      const key = `${division.locationId}:${division.owner}`
+      const current = grouped.get(key) ?? {
+        key,
+        territoryId: division.locationId,
+        owner: division.owner,
+        ids: [],
+        moving: 0,
+        fighting: 0,
+      }
+
+      current.ids.push(division.id)
+      if (division.status === 'moving') current.moving += 1
+      if (
+        division.status === 'attacking' ||
+        division.status === 'defending'
+      ) {
+        current.fighting += 1
+      }
+      grouped.set(key, current)
+    }
+
+    return [...grouped.values()].sort((a, b) =>
+      a.key.localeCompare(b.key),
+    )
+  }, [game?.divisionUnits])
+
+  const divisionStackSignature = useMemo(
+    () =>
+      divisionStacks
+        .map(
+          (stack) =>
+            `${stack.key}:${stack.ids.join(',')}:${stack.moving}:${stack.fighting}`,
+        )
+        .join('|'),
+    [divisionStacks],
+  )
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoaded || !game) return
+
+    for (const marker of divisionMarkersRef.current.values()) {
+      marker.remove()
+    }
+    divisionMarkersRef.current.clear()
+
+    for (const stack of divisionStacks) {
+      const territory = game.territories[stack.territoryId]
+      if (!territory) continue
+
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.className = 'division-map-counter'
+      element.style.setProperty('--division-color', ownerColor(stack.owner, game))
+      element.dataset.selected = stack.ids.includes(game.selectedDivisionId ?? '')
+        ? 'true'
+        : 'false'
+      element.dataset.fighting = stack.fighting > 0 ? 'true' : 'false'
+      element.dataset.moving = stack.moving > 0 ? 'true' : 'false'
+      element.innerHTML = `<span class="division-symbol">◆</span><strong>${stack.ids.length}</strong>`
+      element.title = `${ownerName(stack.owner, game)} · ${territory.name} · 사단 ${stack.ids.length}`
+
+      element.addEventListener('click', (event) => {
+        event.stopPropagation()
+        setGame((previous) => {
+          if (!previous) return previous
+
+          const selectedUnit = previous.selectedDivisionId
+            ? previous.divisionUnits[previous.selectedDivisionId]
+            : null
+
+          if (
+            stack.owner !== 'player' &&
+            selectedUnit?.owner === 'player' &&
+            selectedUnit.status === 'idle' &&
+            selectedUnit.locationId !== stack.territoryId
+          ) {
+            const ordered = issueDivisionOrder(
+              previous,
+              selectedUnit.id,
+              stack.territoryId,
+            )
+
+            if (ordered !== previous) {
+              return {
+                ...ordered,
+                selectedId: stack.territoryId,
+                selectedDivisionId: selectedUnit.id,
+              }
+            }
+          }
+
+          const playerUnit = stack.ids
+            .map((id) => previous.divisionUnits[id])
+            .find((division) => division?.owner === 'player')
+
+          return {
+            ...previous,
+            selectedId: stack.territoryId,
+            selectedDivisionId:
+              playerUnit?.id ??
+              (stack.owner === 'player'
+                ? previous.selectedDivisionId
+                : null),
+          }
+        })
+
+        if (stack.owner === 'player') {
+          setArmyOpen(true)
+        }
+      })
+
+      const marker = new maplibregl.Marker({
+        element,
+        anchor: 'center',
+      })
+        .setLngLat(territory.centroid)
+        .addTo(map)
+
+      divisionMarkersRef.current.set(stack.key, marker)
+    }
+
+    return () => {
+      for (const marker of divisionMarkersRef.current.values()) {
+        marker.remove()
+      }
+      divisionMarkersRef.current.clear()
+    }
+  }, [
+    mapLoaded,
+    divisionStackSignature,
+    game?.selectedDivisionId,
+    game?.factionColors,
+  ])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !layerReady) return
+
+    const source = map.getSource(
+      DIVISION_ROUTE_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+
+    if (!selectedDivision?.order || !game) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: [],
+      })
+      return
+    }
+
+    const current = game.territories[selectedDivision.locationId]
+    const path = selectedDivision.order.path
+      .map((id) => game.territories[id])
+      .filter((territory): territory is TerritoryState => Boolean(territory))
+
+    if (!current || path.length === 0) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: [],
+      })
+      return
+    }
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              current.centroid,
+              ...path.map((territory) => territory.centroid),
+            ],
+          },
+        },
+      ],
+    })
+  }, [
+    selectedDivision?.id,
+    selectedDivision?.locationId,
+    selectedDivision?.order?.targetId,
+    selectedDivision?.order?.remainingTicks,
+    layerReady,
+  ])
+
   const selectedIsIsolated = Boolean(
     selected &&
       selected.owner !== 'neutral' &&
@@ -572,7 +827,7 @@ function App() {
       if (territory.owner !== 'player') continue
       playerDivisions += territory.divisions
       playerFactories += territory.factories
-      playerMilitaryPower += territoryMilitaryPower(territory)
+      playerMilitaryPower += territoryMilitaryPower(territory, game)
       playerSupply += territory.supply
 
       if (
@@ -712,22 +967,62 @@ function App() {
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
-      const sourceId = previous.selectedId
-      const source = sourceId ? previous.territories[sourceId] : null
-      const target = previous.territories[targetId]
+      const divisionId = previous.selectedDivisionId
+      const division = divisionId
+        ? previous.divisionUnits[divisionId]
+        : null
 
       if (
         previous.phase === 'running' &&
-        source &&
-        source.owner === 'player' &&
-        target.owner !== 'player' &&
-        source.neighbors.includes(targetId)
+        division &&
+        division.owner === 'player' &&
+        division.status === 'idle' &&
+        targetId !== division.locationId
       ) {
-        return captureTerritory(previous, source.id, targetId)
+        const ordered = issueDivisionOrder(
+          previous,
+          division.id,
+          targetId,
+        )
+
+        if (ordered !== previous) {
+          return {
+            ...ordered,
+            selectedId: targetId,
+            selectedDivisionId: division.id,
+          }
+        }
       }
 
       return { ...previous, selectedId: targetId }
     })
+  }
+
+  const selectDivision = (divisionId: string) => {
+    setGame((previous) => {
+      if (!previous) return previous
+      const division = previous.divisionUnits[divisionId]
+      if (!division || division.owner !== 'player') return previous
+
+      return {
+        ...previous,
+        selectedDivisionId: division.id,
+        selectedId: division.locationId,
+      }
+    })
+
+    const division = game?.divisionUnits[divisionId]
+    const territory = division
+      ? game?.territories[division.locationId]
+      : null
+
+    if (territory && mapRef.current) {
+      mapRef.current.easeTo({
+        center: territory.centroid,
+        zoom: Math.max(mapRef.current.getZoom(), 8),
+        duration: 420,
+      })
+    }
   }
 
   const focusSelected = () => {
@@ -1074,7 +1369,7 @@ function App() {
                             {from?.name ?? '?'} → {to?.name ?? '?'}
                           </strong>
                           <span>
-                            {battle.committedDivisions}개 사단 · {attackStanceLabels[battle.stance]}
+                            {battle.attackerDivisionIds.length}개 사단 · {attackStanceLabels[battle.stance]}
                           </span>
                         </div>
                         <div className="battle-progress">
@@ -1110,6 +1405,163 @@ function App() {
           </section>
         )}
 
+        {game?.phase === 'running' && armyOpen && (
+          <section className="floating-panel army-panel">
+            <div className="floating-panel-head">
+              <div>
+                <p className="eyebrow">사단 지휘부</p>
+                <h2>배치 사단 {playerDivisionList.length}개</h2>
+              </div>
+              <button onClick={() => setArmyOpen(false)}>닫기</button>
+            </div>
+
+            {selectedDivision?.owner === 'player' && (
+              <div className="division-inspector">
+                <div className="division-inspector-title">
+                  <span className="division-counter-icon">◆</span>
+                  <div>
+                    <strong>{selectedDivision.name || '이름 없는 사단'}</strong>
+                    <span>
+                      {game.territories[selectedDivision.locationId]?.fullName ?? '위치 없음'}
+                    </span>
+                  </div>
+                  <b>{divisionStatusLabel(selectedDivision)}</b>
+                </div>
+
+                <label className="division-edit-field">
+                  <span>사단 명칭</span>
+                  <input
+                    value={selectedDivision.name}
+                    maxLength={32}
+                    onChange={(event) =>
+                      setGame((previous) =>
+                        previous
+                          ? renameDivision(
+                              previous,
+                              selectedDivision.id,
+                              event.target.value,
+                            )
+                          : previous,
+                      )
+                    }
+                  />
+                </label>
+
+                <label className="division-edit-field">
+                  <span>지휘관</span>
+                  <input
+                    value={selectedDivision.commander}
+                    maxLength={24}
+                    onChange={(event) =>
+                      setGame((previous) =>
+                        previous
+                          ? renameCommander(
+                              previous,
+                              selectedDivision.id,
+                              event.target.value,
+                            )
+                          : previous,
+                      )
+                    }
+                  />
+                </label>
+
+                <div className="division-stat-grid">
+                  <div>
+                    <span>전투력</span>
+                    <strong>{Math.round(selectedDivision.strength)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.strength}%` }} />
+                    </i>
+                  </div>
+                  <div>
+                    <span>조직력</span>
+                    <strong>{Math.round(selectedDivision.organization)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.organization}%` }} />
+                    </i>
+                  </div>
+                  <div>
+                    <span>경험</span>
+                    <strong>{Math.round(selectedDivision.experience)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.experience}%` }} />
+                    </i>
+                  </div>
+                </div>
+
+                {selectedDivision.order ? (
+                  <div className="division-order-card">
+                    <div>
+                      <strong>
+                        {selectedDivision.order.type === 'attack'
+                          ? '공격 이동'
+                          : '이동'}
+                      </strong>
+                      <span>
+                        → {game.territories[selectedDivision.order.targetId]?.fullName ?? '목적지 없음'}
+                      </span>
+                    </div>
+                    <small>
+                      경로 {selectedDivision.order.path.length}구간
+                      {selectedDivision.status === 'moving'
+                        ? ` · 현재 구간 ${selectedDivision.order.remainingTicks}틱`
+                        : ''}
+                    </small>
+                    <button
+                      onClick={() =>
+                        setGame((previous) =>
+                          previous
+                            ? cancelDivisionOrder(
+                                previous,
+                                selectedDivision.id,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      현재 명령 취소
+                    </button>
+                  </div>
+                ) : (
+                  <div className="division-order-hint">
+                    지도에서 목적지를 클릭하세요. 아군 지역이면 이동, 다른 세력 지역이면 전선까지 이동 후 공격합니다.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="division-list">
+              {playerDivisionList.map((division) => {
+                const territory = game.territories[division.locationId]
+                const selectedUnit = game.selectedDivisionId === division.id
+
+                return (
+                  <button
+                    key={division.id}
+                    className={selectedUnit ? 'selected' : ''}
+                    onClick={() => selectDivision(division.id)}
+                  >
+                    <span className="division-list-symbol">◆</span>
+                    <div>
+                      <strong>{division.name || '이름 없는 사단'}</strong>
+                      <span>
+                        {division.commander || '지휘관 미지정'} · {territory?.name ?? '위치 없음'}
+                      </span>
+                    </div>
+                    <div className="division-list-state">
+                      <b>{divisionStatusLabel(division)}</b>
+                      <small>
+                        {Math.round(division.strength)}/{Math.round(division.organization)}
+                      </small>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
         {rulesOpen && (
           <section className="rules-panel">
             <div className="rules-head">
@@ -1131,8 +1583,8 @@ function App() {
               <div>
                 <strong>2. 전투도 즉시 끝나지 않습니다</strong>
                 <span>
-                  내 행정동을 선택한 다음 인접한 다른 세력 영토를 클릭하면 전투가 시작됩니다.
-                  전선 패널에서 진행 게이지를 확인할 수 있습니다.
+                  먼저 사단 패널이나 지도 위 부대 카운터에서 사단을 선택합니다.
+                  그 다음 지도에서 목적지를 클릭하면 사단이 실제 경로를 따라 이동하며, 적 지역이면 전선에 도착한 뒤 전투를 시작합니다.
                 </span>
               </div>
               <div>
@@ -1146,7 +1598,7 @@ function App() {
                 <strong>4. 연결과 보급을 유지합니다</strong>
                 <span>
                   같은 세력 영토와 연결된 지역은 보급이 회복되고, 고립된 지역은 보급이 떨어집니다.
-                  인접 아군 지역으로 1개 사단을 재배치할 수도 있습니다.
+                  사단은 자기 영토를 따라 여러 행정동을 이동할 수 있으며, 이동 중에는 지도에 경로가 표시됩니다.
                 </span>
               </div>
               <div>
@@ -1208,6 +1660,14 @@ function App() {
             onClick={() => setCommandOpen((open) => !open)}
           >
             지휘
+          </button>
+          <button
+            className={armyOpen ? 'active' : ''}
+            disabled={game?.phase !== 'running'}
+            onClick={() => setArmyOpen((open) => !open)}
+          >
+            사단
+            {playerDivisionList.length > 0 && <b>{playerDivisionList.length}</b>}
           </button>
           <button
             className={productionOpen ? 'active' : ''}
@@ -1616,7 +2076,7 @@ function App() {
 
             <div className="military-power-row">
               <span>지역 군사력</span>
-              <strong>{territoryMilitaryPower(selected).toLocaleString()}</strong>
+              <strong>{territoryMilitaryPower(selected, game).toLocaleString()}</strong>
             </div>
 
             {selectedBattle && (
@@ -1635,7 +2095,7 @@ function App() {
                 <small>
                   {game.territories[selectedBattle.fromId]?.name ?? '?'} →{' '}
                   {game.territories[selectedBattle.toId]?.name ?? '?'} ·{' '}
-                  {selectedBattle.committedDivisions}개 사단
+                  {selectedBattle.attackerDivisionIds.length}개 사단
                 </small>
               </div>
             )}
@@ -1709,7 +2169,7 @@ function App() {
                   >
                     <strong>사단 편성 대기열</strong>
                     <span>
-                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 사단 +1
+                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 새 사단이 해당 지역에 실제 배치
                     </span>
                   </button>
 
@@ -1735,6 +2195,56 @@ function App() {
                 </div>
               </div>
             )}
+
+            <div className="territory-unit-roster">
+              <div className="neighbor-heading">
+                <h3>주둔 사단</h3>
+                <span>{divisionsHere.length}개</span>
+              </div>
+              {divisionsHere.length === 0 ? (
+                <p className="panel-empty">이 지역에 배치된 사단이 없습니다.</p>
+              ) : (
+                <div className="territory-division-list">
+                  {divisionsHere.map((division) => (
+                    <button
+                      key={division.id}
+                      className={
+                        game.selectedDivisionId === division.id
+                          ? 'selected'
+                          : ''
+                      }
+                      disabled={division.owner !== 'player'}
+                      onClick={() => {
+                        if (division.owner === 'player') {
+                          selectDivision(division.id)
+                          setArmyOpen(true)
+                        }
+                      }}
+                    >
+                      <span
+                        className="mini-unit-counter"
+                        style={{
+                          borderColor: ownerColor(division.owner, game),
+                        }}
+                      >
+                        ◆
+                      </span>
+                      <div>
+                        <strong>{division.name || '이름 없는 사단'}</strong>
+                        <span>
+                          {division.commander || '지휘관 미지정'} ·{' '}
+                          {divisionStatusLabel(division)}
+                        </span>
+                      </div>
+                      <small>
+                        {Math.round(division.strength)} /{' '}
+                        {Math.round(division.organization)}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {regionalStats && (
               <div className="regional-stats">
@@ -1776,32 +2286,19 @@ function App() {
                     battle.fromId === neighbor.id ||
                     battle.toId === neighbor.id,
                 )
-                const canCapture =
+                const canOrder =
                   game.phase === 'running' &&
-                  selected.owner === 'player' &&
-                  neighbor.owner !== 'player' &&
-                  selected.divisions > 0 &&
-                  !selectedBattle &&
-                  !neighborBattle
-                const canSupport =
-                  game.phase === 'running' &&
-                  selected.owner === 'player' &&
-                  neighbor.owner === 'player' &&
-                  selected.divisions > 1 &&
-                  !selectedBattle &&
-                  !neighborBattle
+                  selectedDivision?.owner === 'player' &&
+                  selectedDivision.status === 'idle' &&
+                  selectedDivision.locationId !== neighbor.id
 
                 return (
                   <div key={neighbor.id} className="neighbor-item">
                     <button
-                      className={`neighbor-main ${canCapture ? 'capture' : ''} ${neighborBattle ? 'engaged' : ''}`}
+                      className={`neighbor-main ${canOrder ? 'capture' : ''} ${neighborBattle ? 'engaged' : ''}`}
                       onClick={() => {
-                        if (canCapture) {
-                          setGame((previous) =>
-                            previous
-                              ? captureTerritory(previous, selected.id, neighbor.id)
-                              : previous,
-                          )
+                        if (canOrder) {
+                          handleTerritoryCommand(neighbor.id)
                         } else {
                           setGame((previous) =>
                             previous
@@ -1816,27 +2313,13 @@ function App() {
                         {ownerName(neighbor.owner, game)} · 사단 {neighbor.divisions} · 방어 {neighbor.defense}
                         {neighborBattle
                           ? ' · 전투 중'
-                          : canCapture
-                            ? ' · 작전 개시'
+                          : canOrder
+                            ? neighbor.owner === 'player'
+                              ? ' · 선택 사단 이동'
+                              : ' · 선택 사단 공격'
                             : ''}
                       </small>
                     </button>
-
-                    {canSupport && (
-                      <button
-                        className="support-button"
-                        title="현재 지역에서 1개 사단을 인접 아군 영토로 이동"
-                        onClick={() =>
-                          setGame((previous) =>
-                            previous
-                              ? transferTroops(previous, selected.id, neighbor.id)
-                              : previous,
-                          )
-                        }
-                      >
-                        1사단 재배치
-                      </button>
-                    )}
                   </div>
                 )
               })}
