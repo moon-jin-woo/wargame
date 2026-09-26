@@ -1,9 +1,11 @@
 import type {
   AiCount,
   AiFactionId,
+  ArmyGroup,
   AttackStance,
   BattleState,
   Difficulty,
+  DivisionRole,
   DivisionUnit,
   FactionId,
   GameEvent,
@@ -31,13 +33,14 @@ type SavedTerritory = {
 }
 
 type SavedGame = {
-  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7
+  schema: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
   savedAt: number
   tick: number
   speed: GameSpeed
   phase: GamePhase
   selectedId: string | null
   selectedDivisionId?: string | null
+  selectedArmyId?: string | null
   playerName: string
   dataVersion: string
   aiCount?: AiCount
@@ -51,6 +54,7 @@ type SavedGame = {
   productionQueue?: ProductionOrder[]
   battles?: BattleState[]
   divisionUnits?: Record<string, DivisionUnit>
+  armies?: Record<string, ArmyGroup>
   territories: Record<string, SavedTerritory>
 }
 
@@ -152,13 +156,19 @@ function validDivisionUnits(
           }
         : null
 
+    const role: DivisionRole =
+      unit.role === 'mobile' || unit.role === 'guard' ? unit.role : 'line'
+
     result[id] = {
       ...unit,
       name: unit.name.slice(0, 32),
       commander: unit.commander.slice(0, 24),
+      role,
+      armyId: typeof unit.armyId === 'string' ? unit.armyId : null,
       strength: clamp(Number(unit.strength) || 0, 0, 100),
       organization: clamp(Number(unit.organization) || 0, 0, 100),
       experience: clamp(Number(unit.experience) || 0, 0, 100),
+      entrenchment: clamp(Number(unit.entrenchment) || 0, 0, 100),
       status,
       order,
       createdTick: Math.max(0, Math.floor(unit.createdTick || 0)),
@@ -213,10 +223,13 @@ function migrateLegacyDivisionCounts(
             ? `제${ordinal}보병사단`
             : `${owner.toUpperCase()}-${ordinal} 사단`,
         commander: migratedCommander(globalIndex),
+        role: 'line',
+        armyId: null,
         locationId: territoryId,
         strength: 100,
         organization: 80,
         experience: 0,
+        entrenchment: 0,
         status: 'idle',
         order: null,
         createdTick: Math.max(0, saved.tick || 0),
@@ -242,6 +255,64 @@ function syncDivisionCounts(
       { ...territory, divisions: counts[id] ?? 0 },
     ]),
   )
+}
+
+function validArmies(
+  armies: unknown,
+  territories: GameState['territories'],
+  divisionUnits: Record<string, DivisionUnit>,
+): Record<string, ArmyGroup> {
+  if (!armies || typeof armies !== 'object') return {}
+
+  const result: Record<string, ArmyGroup> = {}
+
+  for (const [id, value] of Object.entries(armies)) {
+    if (!value || typeof value !== 'object') continue
+    const army = value as ArmyGroup
+
+    if (
+      typeof army.id !== 'string' ||
+      army.id !== id ||
+      !VALID_PLAYABLE.has(army.owner) ||
+      typeof army.name !== 'string' ||
+      typeof army.commander !== 'string'
+    ) {
+      continue
+    }
+
+    const divisionIds = Array.isArray(army.divisionIds)
+      ? army.divisionIds.filter(
+          (divisionId) =>
+            typeof divisionId === 'string' &&
+            divisionUnits[divisionId]?.owner === army.owner,
+        )
+      : []
+
+    const objectiveId =
+      typeof army.objectiveId === 'string' &&
+      territories[army.objectiveId]
+        ? army.objectiveId
+        : null
+
+    const planStatus =
+      army.planStatus === 'planning' ||
+      army.planStatus === 'executing'
+        ? army.planStatus
+        : 'idle'
+
+    result[id] = {
+      ...army,
+      name: army.name.slice(0, 28),
+      commander: army.commander.slice(0, 24),
+      divisionIds,
+      objectiveId,
+      planStatus,
+      preparation: clamp(Number(army.preparation) || 0, 0, 100),
+      createdTick: Math.max(0, Math.floor(army.createdTick || 0)),
+    }
+  }
+
+  return result
 }
 
 function validBattles(
@@ -301,13 +372,14 @@ export function saveGame(state: GameState): number {
   )
 
   const payload: SavedGame = {
-    schema: 7,
+    schema: 8,
     savedAt,
     tick: state.tick,
     speed: state.speed,
     phase: state.phase,
     selectedId: state.selectedId,
     selectedDivisionId: state.selectedDivisionId,
+    selectedArmyId: state.selectedArmyId,
     playerName: state.playerName,
     dataVersion: state.dataVersion,
     aiCount: state.aiCount,
@@ -321,6 +393,7 @@ export function saveGame(state: GameState): number {
     productionQueue: state.productionQueue,
     battles: state.battles,
     divisionUnits: state.divisionUnits,
+    armies: state.armies,
     territories,
   }
 
@@ -352,7 +425,8 @@ export function restoreGame(base: GameState): GameState | null {
         saved.schema !== 4 &&
         saved.schema !== 5 &&
         saved.schema !== 6 &&
-        saved.schema !== 7) ||
+        saved.schema !== 7 &&
+        saved.schema !== 8) ||
       !saved.territories ||
       typeof saved.territories !== 'object'
     ) {
@@ -393,7 +467,7 @@ export function restoreGame(base: GameState): GameState | null {
     }
 
     const divisionUnits =
-      saved.schema === 7
+      saved.schema === 7 || saved.schema === 8
         ? validDivisionUnits(saved.divisionUnits, territories)
         : migrateLegacyDivisionCounts(
             territories,
@@ -451,6 +525,25 @@ export function restoreGame(base: GameState): GameState | null {
             (division) => division.owner === 'player',
           )?.id ?? null
 
+    const armies =
+      saved.schema === 8
+        ? validArmies(saved.armies, territories, divisionUnits)
+        : {}
+
+    for (const division of Object.values(divisionUnits)) {
+      if (!division.armyId || !armies[division.armyId]) {
+        division.armyId = null
+      }
+    }
+
+    const selectedArmyId =
+      typeof saved.selectedArmyId === 'string' &&
+      armies[saved.selectedArmyId]?.owner === 'player'
+        ? saved.selectedArmyId
+        : Object.values(armies).find(
+            (army) => army.owner === 'player',
+          )?.id ?? null
+
     return {
       ...base,
       phase,
@@ -462,6 +555,7 @@ export function restoreGame(base: GameState): GameState | null {
           : base.tick,
       selectedId,
       selectedDivisionId,
+      selectedArmyId,
       playerName:
         typeof saved.playerName === 'string'
           ? saved.playerName.slice(0, 24)
@@ -484,10 +578,11 @@ export function restoreGame(base: GameState): GameState | null {
         territories,
       ),
       battles:
-        saved.schema === 7
+        saved.schema === 7 || saved.schema === 8
           ? validBattles(saved.battles, territories, divisionUnits)
           : [],
       divisionUnits,
+      armies,
       territories,
     }
   } catch {
