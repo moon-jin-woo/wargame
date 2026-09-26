@@ -5,6 +5,7 @@ import {
   buildDivision,
   buildFactory,
   buildIndustry,
+  buildRailway,
   cancelProduction,
   createArmy,
   createInitialState,
@@ -15,6 +16,7 @@ import {
   PRODUCTION_TICKS,
   researchTechnology,
   setArmyObjective,
+  setArmyStrategy,
   setDivisionRole,
 } from './game'
 import type { DivisionUnit, GameState, TerritoryState } from './types'
@@ -43,6 +45,7 @@ function territory(
       research: 0,
     },
     terrain: 'plains',
+    railway: 0,
     divisions: 0,
     defense: 0,
     neighbors,
@@ -326,6 +329,51 @@ describe('division unit game loop', () => {
     ).toBeGreaterThan(
       plainsOrdered.divisionUnits['p-1'].order?.totalTicks ?? 0,
     )
+  })
+
+
+  it('builds railway levels through the production queue', () => {
+    let state = runningState()
+    state = buildRailway(state, 'a')
+    const ticks = state.productionQueue[0]?.totalTicks ?? 0
+    expect(state.productionQueue[0]?.kind).toBe('railway')
+
+    for (let tick = 0; tick < ticks; tick += 1) {
+      state = advanceTick(state)
+    }
+
+    expect(state.territories.a.railway).toBe(1)
+  })
+
+  it('blocks advanced technology until prerequisites are researched', () => {
+    let state = runningState()
+    state = {
+      ...state,
+      researchPoints: {
+        ...state.researchPoints,
+        player: 1000,
+      },
+    }
+
+    const blocked = researchTechnology(state, 'player', 'massProduction')
+    expect(blocked.technologies.player.massProduction).toBe(0)
+
+    state = researchTechnology(state, 'player', 'industrialMethods')
+    state = researchTechnology(state, 'player', 'industrialMethods')
+    state = researchTechnology(state, 'player', 'constructionEngineering')
+    state = researchTechnology(state, 'player', 'massProduction')
+
+    expect(state.technologies.player.massProduction).toBe(1)
+  })
+
+  it('changes corps strategy for a player corps', () => {
+    let state = runningState()
+    state = createArmy(state)
+    const armyId = state.selectedArmyId!
+
+    state = setArmyStrategy(state, armyId, 'maneuver')
+
+    expect(state.armies[armyId].strategy).toBe('maneuver')
   })
 
 })
