@@ -7,8 +7,8 @@ import {
   buildDivision,
   buildFactory,
   cancelProduction,
-  captureTerritory,
   createInitialState,
+  divisionMilitaryPower,
   defenseUpgradeCost,
   difficultyLabels,
   DIVISION_COST,
@@ -19,14 +19,23 @@ import {
   factions,
   MAX_DEFENSE,
   MAX_FACTORIES,
+  issueDivisionMoveOrders,
   ownerCounts,
   productionDuration,
+  renameCommander,
+  renameDivision,
   startGame,
+  stopDivisionOrders,
   territoryMilitaryPower,
-  transferTroops,
   upgradeDefense,
 } from './game'
 import { getSavedAt, restoreGame, saveGame } from './persistence'
+import {
+  buildDivisionFeatureCollection,
+  DIVISION_LAYER_ID,
+  DIVISION_SHADOW_LAYER_ID,
+  DIVISION_SOURCE_ID,
+} from './divisionMap'
 import { drawTerritoryCanvas, findTerritoryAtLngLat } from './territoryCanvas'
 import type {
   AdminMapData,
@@ -98,6 +107,7 @@ function App() {
   const previousSelected = useRef<string | null>(null)
   const previousFrontlines = useRef<Record<string, boolean>>({})
   const previousBattleTerritories = useRef<Set<string>>(new Set())
+  const selectedDivisionIdsRef = useRef<string[]>([])
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [layerReady, setLayerReady] = useState(false)
@@ -113,7 +123,13 @@ function App() {
   const [rulesOpen, setRulesOpen] = useState(true)
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
+  const [divisionsOpen, setDivisionsOpen] = useState(false)
+  const [selectedDivisionIds, setSelectedDivisionIds] = useState<string[]>([])
   const [mapMode, setMapMode] = useState<MapMode>('control')
+
+  useEffect(() => {
+    selectedDivisionIdsRef.current = selectedDivisionIds
+  }, [selectedDivisionIds])
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -275,7 +291,93 @@ function App() {
       )
     }
 
+    if (!map.getSource(DIVISION_SOURCE_ID)) {
+      map.addSource(DIVISION_SOURCE_ID, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      })
+
+      map.addLayer({
+        id: DIVISION_SHADOW_LAYER_ID,
+        type: 'circle',
+        source: DIVISION_SOURCE_ID,
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            11,
+            8,
+          ],
+          'circle-color': '#080a0b',
+          'circle-opacity': 0.72,
+          'circle-blur': 0.15,
+        },
+      })
+
+      map.addLayer({
+        id: DIVISION_LAYER_ID,
+        type: 'circle',
+        source: DIVISION_SOURCE_ID,
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            8,
+            6,
+          ],
+          'circle-color': ['get', 'color'],
+          'circle-stroke-color': [
+            'case',
+            ['==', ['get', 'status'], 'battle'],
+            '#ffd1c4',
+            ['boolean', ['get', 'selected'], false],
+            '#ffffff',
+            '#15191a',
+          ],
+          'circle-stroke-width': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            3,
+            2,
+          ],
+          'circle-opacity': 0.98,
+        },
+      })
+    }
+
+    const divisionClickHandler = (event: maplibregl.MapLayerMouseEvent) => {
+      const divisionId = event.features?.[0]?.properties?.divisionId
+      if (!divisionId) return
+
+      const currentGame = gameRef.current
+      const division = currentGame?.divisions[String(divisionId)]
+      if (!division) return
+
+      const additive = Boolean(event.originalEvent.shiftKey)
+
+      setSelectedDivisionIds((previous) => {
+        if (!additive) return [division.id]
+        return previous.includes(division.id)
+          ? previous.filter((id) => id !== division.id)
+          : [...previous, division.id]
+      })
+
+      setGame((previous) =>
+        previous
+          ? { ...previous, selectedId: division.territoryId }
+          : previous,
+      )
+    }
+
     const clickHandler = (event: maplibregl.MapLayerMouseEvent) => {
+      const unitFeatures = map.queryRenderedFeatures(event.point, {
+        layers: [DIVISION_LAYER_ID],
+      })
+      if (unitFeatures.length > 0) return
+
       const id = event.features?.[0]?.properties?.gameId
       if (!id) return
       handleTerritoryCommand(String(id))
@@ -302,7 +404,10 @@ function App() {
       }
     }
 
+    map.on('click', DIVISION_LAYER_ID, divisionClickHandler)
     map.on('click', FILL_LAYER_ID, clickHandler)
+    map.on('mouseenter', DIVISION_LAYER_ID, enterHandler)
+    map.on('mouseleave', DIVISION_LAYER_ID, leaveHandler)
     map.on('mouseenter', FILL_LAYER_ID, enterHandler)
     map.on('mouseleave', FILL_LAYER_ID, leaveHandler)
     map.on('render', detectTerritories)
@@ -313,6 +418,9 @@ function App() {
     setLayerReady(true)
 
     return () => {
+      map.off('click', DIVISION_LAYER_ID, divisionClickHandler)
+      map.off('mouseenter', DIVISION_LAYER_ID, enterHandler)
+      map.off('mouseleave', DIVISION_LAYER_ID, leaveHandler)
       map.off('click', FILL_LAYER_ID, clickHandler)
       map.off('mouseenter', FILL_LAYER_ID, enterHandler)
       map.off('mouseleave', FILL_LAYER_ID, leaveHandler)
@@ -712,18 +820,14 @@ function App() {
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
-      const sourceId = previous.selectedId
-      const source = sourceId ? previous.territories[sourceId] : null
-      const target = previous.territories[targetId]
-
-      if (
-        previous.phase === 'running' &&
-        source &&
-        source.owner === 'player' &&
-        target.owner !== 'player' &&
-        source.neighbors.includes(targetId)
-      ) {
-        return captureTerritory(previous, source.id, targetId)
+      const selectedUnits = selectedDivisionIdsRef.current
+      if (previous.phase === 'running' && selectedUnits.length > 0) {
+        const next = issueDivisionMoveOrders(
+          previous,
+          selectedUnits,
+          targetId,
+        )
+        return { ...next, selectedId: targetId }
       }
 
       return { ...previous, selectedId: targetId }
