@@ -1565,6 +1565,58 @@ function App() {
               <strong>{territoryMilitaryPower(selected).toLocaleString()}</strong>
             </div>
 
+            {selectedBattle && (
+              <div className="territory-battle-card">
+                <div className="territory-battle-head">
+                  <strong>전투 진행 중</strong>
+                  <span>{Math.round(Math.abs(selectedBattle.progress))}%</span>
+                </div>
+                <div className="battle-progress">
+                  <i
+                    style={{
+                      width: `${(selectedBattle.progress + 100) / 2}%`,
+                    }}
+                  />
+                </div>
+                <small>
+                  {game.territories[selectedBattle.fromId]?.name ?? '?'} →{' '}
+                  {game.territories[selectedBattle.toId]?.name ?? '?'} ·{' '}
+                  {selectedBattle.committedDivisions}개 사단
+                </small>
+              </div>
+            )}
+
+            {selectedOrder && (
+              <div className="territory-production-card">
+                <div>
+                  <strong>{productionLabel(selectedOrder.kind)}</strong>
+                  <span>{selectedOrder.remainingTicks}틱 남음</span>
+                </div>
+                <div className="progress-track">
+                  <i
+                    style={{
+                      width: `${
+                        ((selectedOrder.totalTicks - selectedOrder.remainingTicks) /
+                          selectedOrder.totalTicks) *
+                        100
+                      }%`,
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={() =>
+                    setGame((previous) =>
+                      previous
+                        ? cancelProduction(previous, selectedOrder.id)
+                        : previous,
+                    )
+                  }
+                >
+                  생산 취소
+                </button>
+              </div>
+            )}
+
             {game.phase === 'running' && selected.owner === 'player' && (
               <div className="build-panel">
                 <div className="build-panel-head">
@@ -1577,6 +1629,7 @@ function App() {
                 <div className="build-grid">
                   <button
                     disabled={
+                      Boolean(selectedOrder) ||
                       selected.factories >= MAX_FACTORIES ||
                       game.funds.player < FACTORY_COST
                     }
@@ -1586,26 +1639,29 @@ function App() {
                       )
                     }
                   >
-                    <strong>공장 건설</strong>
+                    <strong>산업 시설 대기열</strong>
                     <span>
-                      비용 {FACTORY_COST} · 수익 +{FACTORY_INCOME}/{ECONOMY_INTERVAL}틱
+                      비용 {FACTORY_COST} · {productionDuration('factory', selected)}틱 · 수익 +{FACTORY_INCOME}/{ECONOMY_INTERVAL}틱
                     </span>
                   </button>
 
                   <button
-                    disabled={game.funds.player < DIVISION_COST}
+                    disabled={Boolean(selectedOrder) || game.funds.player < DIVISION_COST}
                     onClick={() =>
                       setGame((previous) =>
                         previous ? buildDivision(previous, selected.id) : previous,
                       )
                     }
                   >
-                    <strong>사단 편성</strong>
-                    <span>비용 {DIVISION_COST} · 지역 사단 +1</span>
+                    <strong>사단 편성 대기열</strong>
+                    <span>
+                      비용 {DIVISION_COST} · {productionDuration('division', selected)}틱 · 완료 시 사단 +1
+                    </span>
                   </button>
 
                   <button
                     disabled={
+                      Boolean(selectedOrder) ||
                       selected.defense >= MAX_DEFENSE ||
                       game.funds.player < defenseUpgradeCost(selected.defense)
                     }
@@ -1619,7 +1675,7 @@ function App() {
                     <span>
                       {selected.defense >= MAX_DEFENSE
                         ? '최대 단계'
-                        : `비용 ${defenseUpgradeCost(selected.defense)} · 방어 +1`}
+                        : `비용 ${defenseUpgradeCost(selected.defense)} · ${productionDuration('defense', selected)}틱 · 방어 +1`}
                     </span>
                   </button>
                 </div>
@@ -1661,20 +1717,30 @@ function App() {
 
             <div className="neighbor-list">
               {neighbors.map((neighbor) => {
+                const neighborBattle = game.battles.find(
+                  (battle) =>
+                    battle.fromId === neighbor.id ||
+                    battle.toId === neighbor.id,
+                )
                 const canCapture =
                   game.phase === 'running' &&
                   selected.owner === 'player' &&
-                  neighbor.owner !== 'player'
+                  neighbor.owner !== 'player' &&
+                  selected.divisions > 0 &&
+                  !selectedBattle &&
+                  !neighborBattle
                 const canSupport =
                   game.phase === 'running' &&
                   selected.owner === 'player' &&
                   neighbor.owner === 'player' &&
-                  selected.divisions > 1
+                  selected.divisions > 1 &&
+                  !selectedBattle &&
+                  !neighborBattle
 
                 return (
                   <div key={neighbor.id} className="neighbor-item">
                     <button
-                      className={`neighbor-main ${canCapture ? 'capture' : ''}`}
+                      className={`neighbor-main ${canCapture ? 'capture' : ''} ${neighborBattle ? 'engaged' : ''}`}
                       onClick={() => {
                         if (canCapture) {
                           setGame((previous) =>
@@ -1694,7 +1760,11 @@ function App() {
                       <span>{neighbor.name}</span>
                       <small>
                         {ownerName(neighbor.owner, game)} · 사단 {neighbor.divisions} · 방어 {neighbor.defense}
-                        {canCapture ? ' · 공격 가능' : ''}
+                        {neighborBattle
+                          ? ' · 전투 중'
+                          : canCapture
+                            ? ' · 작전 개시'
+                            : ''}
                       </small>
                     </button>
 
@@ -1710,7 +1780,7 @@ function App() {
                           )
                         }
                       >
-                        1사단 지원
+                        1사단 재배치
                       </button>
                     )}
                   </div>
