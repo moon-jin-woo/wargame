@@ -83,6 +83,14 @@ function productionLabel(kind: ProductionKind): string {
   return '방어 공사'
 }
 
+function divisionStatusLabel(division: DivisionState): string {
+  if (division.status === 'moving') return '이동 중'
+  if (division.status === 'attacking') return '공격 중'
+  if (division.status === 'defending') return '방어 중'
+  if (division.status === 'retreating') return '후퇴 중'
+  return '대기'
+}
+
 function ownerName(owner: FactionId, game: GameState): string {
   if (owner === 'player') return game.playerName || '—'
   if (owner === 'neutral') return factions.neutral.name
@@ -508,6 +516,121 @@ function App() {
   ])
 
   useEffect(() => {
+    const map = mapRef.current
+
+    for (const marker of divisionMarkersRef.current.values()) {
+      marker.remove()
+    }
+    divisionMarkersRef.current.clear()
+
+    if (!map || !mapLoaded || !game || game.phase === 'setup') return
+
+    const stacks = new Map<
+      string,
+      { owner: FactionId; locationId: string; divisions: DivisionState[] }
+    >()
+
+    for (const division of Object.values(game.divisions)) {
+      const key = `${division.owner}:${division.locationId}`
+      const current = stacks.get(key) ?? {
+        owner: division.owner,
+        locationId: division.locationId,
+        divisions: [],
+      }
+      current.divisions.push(division)
+      stacks.set(key, current)
+    }
+
+    for (const [key, stack] of stacks) {
+      const territory = game.territories[stack.locationId]
+      if (!territory) continue
+
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.className = 'division-stack-marker'
+      element.style.setProperty('--unit-color', ownerColor(stack.owner, game))
+      element.title = `${ownerName(stack.owner, game)} · ${territory.fullName} · ${stack.divisions.length}개 사단`
+
+      const selectedHere = stack.divisions.some((division) =>
+        selectedDivisionIds.includes(division.id),
+      )
+      const moving = stack.divisions.some(
+        (division) => division.status === 'moving',
+      )
+      const engaged = stack.divisions.some(
+        (division) =>
+          division.status === 'attacking' ||
+          division.status === 'defending',
+      )
+
+      if (selectedHere) element.classList.add('selected')
+      if (moving) element.classList.add('moving')
+      if (engaged) element.classList.add('engaged')
+
+      const count = document.createElement('strong')
+      count.textContent = String(stack.divisions.length)
+      const label = document.createElement('span')
+      label.textContent =
+        engaged ? '전투' : moving ? '이동' : stack.owner === 'player' ? '사단' : '정보'
+      element.append(count, label)
+
+      element.addEventListener('click', (event) => {
+        event.stopPropagation()
+        setGame((previous) =>
+          previous
+            ? { ...previous, selectedId: stack.locationId }
+            : previous,
+        )
+
+        if (stack.owner === 'player') {
+          const ready = stack.divisions
+            .filter((division) => division.status === 'idle')
+            .map((division) => division.id)
+
+          setSelectedDivisionIds(
+            ready.length > 0
+              ? ready
+              : stack.divisions.map((division) => division.id),
+          )
+          setDivisionsOpen(true)
+        }
+      })
+
+      const marker = new maplibregl.Marker({
+        element,
+        anchor: 'center',
+      })
+        .setLngLat(territory.centroid)
+        .addTo(map)
+
+      divisionMarkersRef.current.set(key, marker)
+    }
+
+    return () => {
+      for (const marker of divisionMarkersRef.current.values()) {
+        marker.remove()
+      }
+      divisionMarkersRef.current.clear()
+    }
+  }, [
+    game?.divisions,
+    game?.territories,
+    game?.phase,
+    game?.factionColors,
+    game?.playerName,
+    game?.aiNames,
+    mapLoaded,
+    selectedDivisionIds,
+  ])
+
+  useEffect(() => {
+    if (!game) return
+    setSelectedDivisionIds((current) =>
+      current.filter((id) => Boolean(game.divisions[id])),
+    )
+  }, [game?.divisions])
+
+  useEffect(() => {
     if (!game || !game.running || game.phase !== 'running') return
 
     const ticksPerPulse = game.speed === 10 ? 2 : 1
@@ -534,6 +657,44 @@ function App() {
   }, [game?.tick])
 
   const selected = game?.selectedId ? game.territories[game.selectedId] : null
+  const playerDivisions = useMemo(
+    () =>
+      game
+        ? Object.values(game.divisions)
+            .filter((division) => division.owner === 'player')
+            .sort((a, b) => {
+              const aLocation = game.territories[a.locationId]?.fullName ?? ''
+              const bLocation = game.territories[b.locationId]?.fullName ?? ''
+              return (
+                aLocation.localeCompare(bLocation, 'ko') ||
+                a.name.localeCompare(b.name, 'ko')
+              )
+            })
+        : [],
+    [game?.divisions, game?.territories],
+  )
+
+  const selectedDivisions = useMemo(
+    () =>
+      game
+        ? selectedDivisionIds
+            .map((id) => game.divisions[id])
+            .filter((division): division is DivisionState => Boolean(division))
+        : [],
+    [game?.divisions, selectedDivisionIds],
+  )
+
+  const divisionsAtSelected = useMemo(
+    () =>
+      game && selected
+        ? Object.values(game.divisions).filter(
+            (division) =>
+              division.owner === 'player' &&
+              division.locationId === selected.id,
+          )
+        : [],
+    [game?.divisions, selected?.id],
+  )
   const selectedIsIsolated = Boolean(
     selected &&
       selected.owner !== 'neutral' &&
