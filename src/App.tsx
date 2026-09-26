@@ -497,12 +497,20 @@ function App() {
 
     for (const [id, territory] of Object.entries(game.territories)) {
       const visualColor = territoryMapColor(territory, game, mapMode)
+      const industryKey =
+        territory.industry.civilian +
+        territory.industry.military * 2 +
+        territory.industry.logistics * 3 +
+        territory.industry.infrastructure * 5 +
+        territory.industry.research * 7
       const ownerKey =
         mapMode === 'control'
           ? `${territory.owner}|${visualColor}`
           : mapMode === 'supply'
             ? `${mapMode}|${Math.round(territory.supply / 5)}|${visualColor}`
-            : `${mapMode}|${territory.factories}|${visualColor}`
+            : mapMode === 'terrain'
+              ? `${mapMode}|${territory.terrain}|${visualColor}`
+              : `${mapMode}|${industryKey}|${visualColor}`
 
       if (previousOwners.current[id] !== ownerKey) {
         map.setFeatureState(
@@ -1008,17 +1016,26 @@ function App() {
     if (!game || !counts || total === 0) return null
 
     let playerDivisions = 0
-    let playerFactories = 0
     let playerMilitaryPower = 0
     let playerSupply = 0
     let playerFrontlines = 0
+    const industry = {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    }
 
     for (const territory of Object.values(game.territories)) {
       if (territory.owner !== 'player') continue
       playerDivisions += territory.divisions
-      playerFactories += territory.factories
       playerMilitaryPower += territoryMilitaryPower(territory, game)
       playerSupply += territory.supply
+
+      for (const kind of INDUSTRY_TYPES) {
+        industry[kind] += territory.industry[kind]
+      }
 
       if (
         territory.neighbors.some(
@@ -1030,18 +1047,26 @@ function App() {
     }
 
     const playerOwned = counts.player
+    const industryTotal = INDUSTRY_TYPES.reduce(
+      (sum, kind) => sum + industry[kind],
+      0,
+    )
+
     return {
       playerOwned,
       share: (playerOwned / total) * 100,
       playerDivisions,
-      playerFactories,
+      playerFactories: industry.civilian + industry.military,
+      playerIndustryTotal: industryTotal,
+      industry,
       playerMilitaryPower,
       income: factionIncomePerCycle(game, 'player'),
+      researchIncome: factionResearchPerCycle(game, 'player'),
       averageSupply:
         playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
       playerFrontlines,
     }
-  }, [game?.territories, counts, total])
+  }, [game?.territories, game?.technologies, counts, total])
 
   const playerQueue = useMemo(
     () => game?.productionQueue.filter((order) => order.owner === 'player') ?? [],
