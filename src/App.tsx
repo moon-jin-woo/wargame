@@ -449,7 +449,10 @@ function App() {
       .slice(0, 24)
   }, [game, searchQuery])
 
-  const counts = useMemo(() => (game ? ownerCounts(game) : null), [game])
+  const counts = useMemo(
+    () => (game ? ownerCounts(game) : null),
+    [game?.territories],
+  )
   const total = game ? Object.keys(game.territories).length : 0
 
   const nationalStats = useMemo(() => {
@@ -481,7 +484,7 @@ function App() {
         playerOwned > 0 ? Math.round(playerSupply / playerOwned) : 0,
       playerFrontlines,
     }
-  }, [game, counts, total])
+  }, [game?.territories, counts, total])
 
   const regionalStats = useMemo(() => {
     if (!game || !selected) return null
@@ -518,7 +521,7 @@ function App() {
         ...summarize(districtTerritories),
       },
     }
-  }, [game, selected])
+  }, [game?.territories, selected?.id])
 
   const handleTerritoryCommand = (targetId: string) => {
     setGame((previous) => {
