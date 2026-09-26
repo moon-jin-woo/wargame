@@ -35,6 +35,7 @@ import {
   ownerCounts,
   playerArmies,
   playerDivisions,
+  planRailwayRoute,
   productionDuration,
   productionKindLabel,
   renameArmy,
@@ -47,12 +48,16 @@ import {
   assignDivisionToArmy,
   startGame,
   researchTechnology,
+  setNationalStrategy,
   technologyAvailable,
   technologyCategories,
   technologyCost,
   technologyDefinitions,
+  technologyEffectSummary,
   TECHNOLOGY_IDS,
   technologyLabels,
+  nationalStrategyDescriptions,
+  nationalStrategyLabels,
   strategyDescriptions,
   strategyLabels,
   terrainLabels,
@@ -73,6 +78,7 @@ import type {
   GameSpeed,
   GameState,
   IndustryType,
+  NationalStrategy,
   PlayableFactionId,
   ProductionKind,
   StrategyDoctrine,
@@ -213,6 +219,7 @@ function App() {
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
   const [hqFaction, setHqFaction] = useState<PlayableFactionId>('player')
+  const [railwayRouteStart, setRailwayRouteStart] = useState<string | null>(null)
   const [objectiveMode, setObjectiveMode] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
@@ -1315,6 +1322,24 @@ function App() {
   }, [game?.territories, selected?.id])
 
   const handleTerritoryCommand = (targetId: string) => {
+    if (railwayRouteStart) {
+      setGame((previous) => {
+        if (!previous || !previous.territories[targetId]) return previous
+        const planned = planRailwayRoute(
+          previous,
+          railwayRouteStart,
+          targetId,
+        )
+        return {
+          ...planned,
+          selectedId: targetId,
+        }
+      })
+      setRailwayRouteStart(null)
+      setMapMode('railway')
+      return
+    }
+
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
