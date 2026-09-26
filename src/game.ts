@@ -1192,30 +1192,10 @@ export function createInitialState(
       green: 0,
     },
     technologies: {
-      player: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
-      red: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
-      blue: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
-      green: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
+      player: zeroTechnologyLevels(),
+      red: zeroTechnologyLevels(),
+      blue: zeroTechnologyLevels(),
+      green: zeroTechnologyLevels(),
     },
     aiCount: 3,
     difficulty: 'normal',
@@ -1403,30 +1383,10 @@ export function startGame(state: GameState, startId: string): GameState {
       green: 0,
     },
     technologies: {
-      player: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
-      red: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
-      blue: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
-      green: {
-        industrialMethods: 0,
-        logisticsPlanning: 0,
-        commandNetwork: 0,
-        fieldEngineering: 0,
-      },
+      player: zeroTechnologyLevels(),
+      red: zeroTechnologyLevels(),
+      blue: zeroTechnologyLevels(),
+      green: zeroTechnologyLevels(),
     },
     productionQueue: [],
     battles: [],
@@ -1693,10 +1653,20 @@ function processProduction(state: GameState): GameState {
   return { ...next, productionQueue: remaining }
 }
 
+function divisionStrategy(
+  state: GameState,
+  division: DivisionUnit,
+): StrategyDoctrine {
+  return division.armyId
+    ? state.armies[division.armyId]?.strategy ?? 'balanced'
+    : 'balanced'
+}
+
 function movementTicks(
   source: TerritoryState,
   target: TerritoryState,
   role: DivisionRole = 'line',
+  strategy: StrategyDoctrine = 'balanced',
 ): number {
   const supplyPenalty = Math.round((100 - source.supply) / 35)
   const distancePenalty = Math.min(
@@ -1711,6 +1681,8 @@ function movementTicks(
     0.82,
     1 - source.industry.logistics * 0.035,
   )
+  const railLevel = Math.min(source.railway, target.railway)
+  const railwayModifier = Math.max(0.72, 1 - railLevel * 0.085)
 
   return clamp(
     Math.ceil(
@@ -1718,7 +1690,9 @@ function movementTicks(
         roleMoveMultiplier[role] *
         terrainMove[target.terrain] *
         infrastructureModifier *
-        logisticsModifier,
+        logisticsModifier *
+        railwayModifier *
+        strategyMove[strategy],
     ),
     1,
     10,
@@ -1834,7 +1808,7 @@ export function issueDivisionOrder(
   const firstStep = state.territories[path[0]]
   if (!firstStep) return state
 
-  const totalTicks = movementTicks(source, firstStep, division.role)
+  const totalTicks = movementTicks(source, firstStep, division.role, divisionStrategy(state, division))
   const orderType =
     target.owner === division.owner ? 'move' : 'attack'
 
@@ -1937,7 +1911,7 @@ function startDivisionBattle(
   const defenders = defenderIdsAt(state, targetId, target.owner)
 
   if (defenders.length === 0 && target.defense === 0) {
-    const totalTicks = movementTicks(source, target, division.role)
+    const totalTicks = movementTicks(source, target, division.role, divisionStrategy(state, division))
     const nextDivision: DivisionUnit = {
       ...division,
       entrenchment: 0,
@@ -2179,7 +2153,7 @@ function processMovement(state: GameState): GameState {
         continue
       }
 
-      const legTicks = movementTicks(nextStep, following, division.role)
+      const legTicks = movementTicks(nextStep, following, division.role, divisionStrategy(state, division))
       nextOrder = {
         ...order,
         path: remainingPath,
@@ -2793,7 +2767,7 @@ function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
       )
 
     if (friendlyFront) {
-      const totalTicks = movementTicks(territory, friendlyFront, current.role)
+      const totalTicks = movementTicks(territory, friendlyFront, current.role, divisionStrategy(next, current))
       next = setDivision(next, {
         ...current,
         status: 'moving',
