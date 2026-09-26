@@ -804,6 +804,7 @@ function createArmyGroup(
     objectiveId: null,
     planStatus: 'idle',
     strategy,
+    theater: null,
     preparation: 0,
     createdTick: state.tick,
   }
@@ -851,6 +852,32 @@ export function setArmyStrategy(
       },
     },
   }
+}
+
+export function setNationalStrategy(
+  state: GameState,
+  owner: PlayableFactionId,
+  strategy: NationalStrategy,
+): GameState {
+  if (owner !== 'player' && !activeAiFactions(state.aiCount).includes(owner as AiFactionId)) {
+    return state
+  }
+
+  const next: GameState = {
+    ...state,
+    nationalStrategies: {
+      ...state.nationalStrategies,
+      [owner]: strategy,
+    },
+  }
+
+  if (owner !== 'player') return next
+
+  return withEvent(
+    next,
+    'system',
+    `국가 전략 변경 · ${nationalStrategyLabels[strategy]}`,
+  )
 }
 
 export function renameArmy(
@@ -1371,6 +1398,12 @@ export function createInitialState(
       blue: zeroTechnologyLevels(),
       green: zeroTechnologyLevels(),
     },
+    nationalStrategies: {
+      player: 'balancedDevelopment',
+      red: 'balancedDevelopment',
+      blue: 'balancedDevelopment',
+      green: 'balancedDevelopment',
+    },
     aiCount: 3,
     difficulty: 'normal',
     attackStance: 'balanced',
@@ -1561,6 +1594,12 @@ export function startGame(state: GameState, startId: string): GameState {
       red: zeroTechnologyLevels(),
       blue: zeroTechnologyLevels(),
       green: zeroTechnologyLevels(),
+    },
+    nationalStrategies: {
+      player: state.nationalStrategies.player ?? 'balancedDevelopment',
+      red: 'balancedDevelopment',
+      blue: 'balancedDevelopment',
+      green: 'balancedDevelopment',
     },
     productionQueue: [],
     battles: [],
