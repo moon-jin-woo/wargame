@@ -4,6 +4,7 @@ import type {
   AttackStance,
   BattleState,
   Difficulty,
+  DivisionUnit,
   Faction,
   FactionId,
   GameEventKind,
@@ -40,6 +41,7 @@ export const FACTORY_INCOME = 12
 export const ECONOMY_INTERVAL = 5
 export const MAX_FACTORIES = 4
 export const MAX_DEFENSE = 4
+export const DIVISION_MOVE_TICKS = 2
 
 export const PRODUCTION_TICKS: Record<ProductionKind, number> = {
   factory: 30,
@@ -52,26 +54,39 @@ const DIVISION_POWER = 100
 const DEFENSE_POWER = 60
 const aiFactions: AiFactionId[] = ['red', 'blue', 'green']
 
-const stanceCommit: Record<AttackStance, number> = {
-  cautious: 0.35,
-  balanced: 0.5,
-  aggressive: 0.7,
-}
-
 const stancePower: Record<AttackStance, number> = {
   cautious: 0.92,
   balanced: 1,
   aggressive: 1.1,
 }
 
-const stanceSupplyCost: Record<AttackStance, number> = {
-  cautious: 4,
-  balanced: 6,
-  aggressive: 9,
-}
+const commanderPool = [
+  '강민재',
+  '김도윤',
+  '박서준',
+  '이현우',
+  '정우진',
+  '최민석',
+  '한지훈',
+  '윤태경',
+  '임도현',
+  '서준혁',
+  '오재민',
+  '백승현',
+  '권태윤',
+  '조현민',
+  '신도훈',
+  '남우석',
+]
 
 function activeAiFactions(count: AiCount): AiFactionId[] {
   return aiFactions.slice(0, count)
+}
+
+function stanceForAi(state: GameState): AttackStance {
+  if (state.difficulty === 'easy') return 'cautious'
+  if (state.difficulty === 'hard') return 'aggressive'
+  return 'balanced'
 }
 
 function actorName(state: GameState, owner: FactionId): string {
@@ -86,7 +101,7 @@ function withEvent(
   message: string,
 ): GameState {
   const event = {
-    id: `${state.tick}:${kind}:${state.events.length}:${message.slice(0, 20)}`,
+    id: `${state.tick}:${kind}:${state.events.length}:${message.slice(0, 24)}`,
     tick: state.tick,
     kind,
     message,
@@ -94,7 +109,7 @@ function withEvent(
 
   return {
     ...state,
-    events: [event, ...state.events].slice(0, 60),
+    events: [event, ...state.events].slice(0, 80),
   }
 }
 
@@ -140,6 +155,114 @@ function normalizeTerritories(
   )
 }
 
+function divisionTemplateName(serial: number): string {
+  const labels = ['전투', '기동', '경비', '전선']
+  return `제${serial} ${labels[(serial - 1) % labels.length]}사단`
+}
+
+function divisionCommander(owner: PlayableFactionId, serial: number): string {
+  const offset = hashString(owner) % commanderPool.length
+  return commanderPool[(offset + serial - 1) % commanderPool.length]
+}
+
+function makeDivision(
+  owner: PlayableFactionId,
+  territoryId: string,
+  serial: number,
+  createdTick: number,
+  idSeed: string,
+): DivisionUnit {
+  return {
+    id: `div:${owner}:${idSeed}:${serial}`,
+    owner,
+    name: divisionTemplateName(serial),
+    commander: divisionCommander(owner, serial),
+    territoryId,
+    strength: 100,
+    organization: 82,
+    supply: 85,
+    experience: 0,
+    status: 'idle',
+    order: null,
+    createdTick,
+  }
+}
+
+function divisionPower(division: DivisionUnit): number {
+  const readiness = 0.25 + (division.organization / 100) * 0.75
+  const strength = 0.2 + (division.strength / 100) * 0.8
+  const supply = 0.55 + division.supply / 220
+  const experience = 1 + division.experience / 400
+  return DIVISION_POWER * readiness * strength * supply * experience
+}
+
+function divisionsAt(
+  state: GameState,
+  territoryId: string,
+  owner?: PlayableFactionId,
+): DivisionUnit[] {
+  return Object.values(state.divisions).filter(
+    (division) =>
+      division.territoryId === territoryId &&
+      (owner ? division.owner === owner : true),
+  )
+}
+
+function syncTerritoryDivisionCounts(state: GameState): GameState {
+  const counts: Record<string, number> = {}
+
+  for (const division of Object.values(state.divisions)) {
+    counts[division.territoryId] = (counts[division.territoryId] ?? 0) + 1
+  }
+
+  let changed = false
+  const territories = { ...state.territories }
+
+  for (const [id, territory] of Object.entries(state.territories)) {
+    const count = counts[id] ?? 0
+    if (territory.divisions !== count) {
+      territories[id] = { ...territory, divisions: count }
+      changed = true
+    }
+  }
+
+  return changed ? { ...state, territories } : state
+}
+
+export function materializeLegacyDivisions(
+  territories: Record<string, TerritoryState>,
+  tick: number,
+): Record<string, DivisionUnit> {
+  const divisions: Record<string, DivisionUnit> = {}
+  const serials: Record<PlayableFactionId, number> = {
+    player: 0,
+    red: 0,
+    blue: 0,
+    green: 0,
+  }
+
+  for (const territory of Object.values(territories).sort((a, b) =>
+    a.id.localeCompare(b.id),
+  )) {
+    if (territory.owner === 'neutral') continue
+    const owner = territory.owner
+
+    for (let index = 0; index < territory.divisions; index += 1) {
+      serials[owner] += 1
+      const division = makeDivision(
+        owner,
+        territory.id,
+        serials[owner],
+        tick,
+        `start:${territory.id}:${index}`,
+      )
+      divisions[division.id] = division
+    }
+  }
+
+  return divisions
+}
+
 export function defenseUpgradeCost(level: number): number {
   if (level >= MAX_DEFENSE) return 0
   return 70 + level * 50
@@ -166,6 +289,10 @@ export function productionDuration(
 
 export function territoryMilitaryPower(territory: TerritoryState): number {
   return territory.divisions * DIVISION_POWER + territory.defense * DEFENSE_POWER
+}
+
+export function divisionMilitaryPower(division: DivisionUnit): number {
+  return Math.round(divisionPower(division))
 }
 
 export function factionIncomePerCycle(
@@ -218,6 +345,7 @@ export function createInitialState(
     events: [],
     productionQueue: [],
     battles: [],
+    divisions: {},
     territories: normalized,
   }
 }
@@ -314,8 +442,10 @@ export function startGame(state: GameState, startId: string): GameState {
     territories = claimCluster(territories, seed, faction, reserved)
   }
 
+  const divisions = materializeLegacyDivisions(territories, 0)
+
   return withEvent(
-    {
+    syncTerritoryDivisionCounts({
       ...state,
       phase: 'running',
       running: true,
@@ -329,11 +459,12 @@ export function startGame(state: GameState, startId: string): GameState {
       },
       productionQueue: [],
       battles: [],
+      divisions,
       events: [],
       territories,
-    },
+    }),
     'system',
-    `작전 개시 · ${start.fullName}`,
+    `작전 개시 · ${start.fullName} · 개별 사단 체계 활성화`,
   )
 }
 
@@ -388,7 +519,7 @@ function queueProductionForOwner(
   if (owner !== 'player') return next
 
   const label =
-    kind === 'factory' ? '공장 건설' : kind === 'division' ? '사단 편성' : '방어 강화'
+    kind === 'factory' ? '산업 시설' : kind === 'division' ? '사단 편성' : '방어 공사'
 
   return withEvent(
     next,
@@ -443,6 +574,12 @@ export function cancelProduction(
   )
 }
 
+function nextDivisionSerial(state: GameState, owner: PlayableFactionId): number {
+  return Object.values(state.divisions).filter(
+    (division) => division.owner === owner,
+  ).length + 1
+}
+
 function completeProduction(
   state: GameState,
   order: ProductionOrder,
@@ -450,36 +587,56 @@ function completeProduction(
   const territory = state.territories[order.territoryId]
   if (!territory || territory.owner !== order.owner) return state
 
-  let updated = territory
+  let next = state
+
   if (order.kind === 'factory') {
-    updated = {
-      ...territory,
-      factories: Math.min(MAX_FACTORIES, territory.factories + 1),
+    next = {
+      ...state,
+      territories: {
+        ...state.territories,
+        [territory.id]: {
+          ...territory,
+          factories: Math.min(MAX_FACTORIES, territory.factories + 1),
+        },
+      },
     }
   } else if (order.kind === 'division') {
-    updated = { ...territory, divisions: territory.divisions + 1 }
-  } else {
-    updated = {
-      ...territory,
-      defense: Math.min(MAX_DEFENSE, territory.defense + 1),
-    }
-  }
+    const serial = nextDivisionSerial(state, order.owner)
+    const division = makeDivision(
+      order.owner,
+      territory.id,
+      serial,
+      state.tick,
+      order.id,
+    )
 
-  let next: GameState = {
-    ...state,
-    territories: {
-      ...state.territories,
-      [territory.id]: updated,
-    },
+    next = syncTerritoryDivisionCounts({
+      ...state,
+      divisions: {
+        ...state.divisions,
+        [division.id]: division,
+      },
+    })
+  } else {
+    next = {
+      ...state,
+      territories: {
+        ...state.territories,
+        [territory.id]: {
+          ...territory,
+          defense: Math.min(MAX_DEFENSE, territory.defense + 1),
+        },
+      },
+    }
   }
 
   if (order.owner === 'player') {
     const label =
       order.kind === 'factory'
-        ? '공장 완공'
+        ? '산업 시설 완공'
         : order.kind === 'division'
-          ? '사단 편성 완료'
-          : '방어 강화 완료'
+          ? '신규 사단 배치'
+          : '방어 공사 완료'
     next = withEvent(next, 'production', `${territory.fullName} · ${label}`)
   }
 
@@ -494,9 +651,7 @@ function processProduction(state: GameState): GameState {
 
   for (const order of state.productionQueue) {
     const territory = next.territories[order.territoryId]
-    if (!territory || territory.owner !== order.owner) {
-      continue
-    }
+    if (!territory || territory.owner !== order.owner) continue
 
     const progressed = {
       ...order,
@@ -516,174 +671,559 @@ function processProduction(state: GameState): GameState {
   }
 }
 
-function stanceForAi(state: GameState): AttackStance {
-  if (state.difficulty === 'easy') return 'cautious'
-  if (state.difficulty === 'hard') return 'aggressive'
-  return 'balanced'
+function findDivisionPath(
+  state: GameState,
+  division: DivisionUnit,
+  targetId: string,
+): string[] | null {
+  if (division.territoryId === targetId) return []
+  if (!state.territories[targetId]) return null
+
+  const queue: string[] = [division.territoryId]
+  const previous = new Map<string, string | null>([[division.territoryId, null]])
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()
+    if (!currentId) break
+    const current = state.territories[currentId]
+    if (!current) continue
+
+    for (const neighborId of current.neighbors) {
+      if (previous.has(neighborId)) continue
+      const neighbor = state.territories[neighborId]
+      if (!neighbor) continue
+
+      const traversable =
+        neighborId === targetId || neighbor.owner === division.owner
+      if (!traversable) continue
+
+      previous.set(neighborId, currentId)
+
+      if (neighborId === targetId) {
+        const reversed = [targetId]
+        let cursor = currentId
+        while (cursor !== division.territoryId) {
+          reversed.push(cursor)
+          cursor = previous.get(cursor) ?? division.territoryId
+        }
+        return reversed.reverse()
+      }
+
+      queue.push(neighborId)
+    }
+  }
+
+  return null
 }
 
-function startBattle(
+export function issueDivisionMoveOrders(
   state: GameState,
-  fromId: string,
-  toId: string,
-  owner: PlayableFactionId,
-  stance: AttackStance,
+  divisionIds: string[],
+  targetId: string,
 ): GameState {
   if (state.phase !== 'running') return state
 
-  const from = state.territories[fromId]
-  const to = state.territories[toId]
+  const divisions = { ...state.divisions }
+  let issued = 0
 
-  if (
-    !from ||
-    !to ||
-    from.owner !== owner ||
-    to.owner === owner ||
-    !from.neighbors.includes(toId) ||
-    from.divisions < 1
-  ) {
+  for (const divisionId of divisionIds) {
+    const division = divisions[divisionId]
+    if (
+      !division ||
+      division.owner !== 'player' ||
+      division.status === 'battle'
+    ) {
+      continue
+    }
+
+    const path = findDivisionPath(state, division, targetId)
+    if (!path || path.length === 0) continue
+
+    divisions[divisionId] = {
+      ...division,
+      status: 'moving',
+      order: {
+        kind: 'move',
+        targetId,
+        path,
+        nextIndex: 0,
+        remainingTicks: DIVISION_MOVE_TICKS,
+        totalTicks: DIVISION_MOVE_TICKS,
+      },
+    }
+    issued += 1
+  }
+
+  if (issued === 0) return state
+
+  return withEvent(
+    { ...state, divisions },
+    'movement',
+    `${issued}개 사단 이동 명령 · ${state.territories[targetId]?.name ?? '목표'}`,
+  )
+}
+
+export function stopDivisionOrders(
+  state: GameState,
+  divisionIds: string[],
+): GameState {
+  const divisions = { ...state.divisions }
+  let changed = false
+
+  for (const id of divisionIds) {
+    const division = divisions[id]
+    if (!division || division.owner !== 'player' || division.status === 'battle') {
+      continue
+    }
+
+    if (division.order || division.status === 'moving') {
+      divisions[id] = {
+        ...division,
+        order: null,
+        status: 'idle',
+      }
+      changed = true
+    }
+  }
+
+  return changed ? { ...state, divisions } : state
+}
+
+export function renameDivision(
+  state: GameState,
+  divisionId: string,
+  name: string,
+): GameState {
+  const division = state.divisions[divisionId]
+  if (!division || division.owner !== 'player') return state
+
+  return {
+    ...state,
+    divisions: {
+      ...state.divisions,
+      [divisionId]: {
+        ...division,
+        name: name.slice(0, 32),
+      },
+    },
+  }
+}
+
+export function renameCommander(
+  state: GameState,
+  divisionId: string,
+  commander: string,
+): GameState {
+  const division = state.divisions[divisionId]
+  if (!division || division.owner !== 'player') return state
+
+  return {
+    ...state,
+    divisions: {
+      ...state.divisions,
+      [divisionId]: {
+        ...division,
+        commander: commander.slice(0, 32),
+      },
+    },
+  }
+}
+
+function battleForTarget(
+  state: GameState,
+  targetId: string,
+): BattleState | undefined {
+  return state.battles.find((battle) => battle.toId === targetId)
+}
+
+function beginOrJoinBattle(
+  state: GameState,
+  divisionId: string,
+  targetId: string,
+  stance: AttackStance,
+): GameState {
+  const division = state.divisions[divisionId]
+  const target = state.territories[targetId]
+  if (!division || !target || target.owner === division.owner) return state
+  if (!state.territories[division.territoryId]?.neighbors.includes(targetId)) {
     return state
   }
 
-  const collision = state.battles.some(
-    (battle) =>
-      battle.fromId === fromId ||
-      battle.toId === fromId ||
-      battle.fromId === toId ||
-      battle.toId === toId,
-  )
-  if (collision) return state
+  const existing = battleForTarget(state, targetId)
 
-  const committed = Math.max(
-    1,
-    Math.min(from.divisions, Math.ceil(from.divisions * stanceCommit[stance])),
+  if (existing) {
+    if (existing.attacker !== division.owner) {
+      return {
+        ...state,
+        divisions: {
+          ...state.divisions,
+          [divisionId]: {
+            ...division,
+            status: 'idle',
+            order: null,
+          },
+        },
+      }
+    }
+
+    if (existing.attackerDivisionIds.includes(divisionId)) return state
+
+    return {
+      ...state,
+      divisions: {
+        ...state.divisions,
+        [divisionId]: {
+          ...division,
+          status: 'battle',
+          order: null,
+        },
+      },
+      battles: state.battles.map((battle) =>
+        battle.id === existing.id
+          ? {
+              ...battle,
+              attackerDivisionIds: [...battle.attackerDivisionIds, divisionId],
+            }
+          : battle,
+      ),
+    }
+  }
+
+  const defenderDivisionIds = divisionsAt(
+    state,
+    targetId,
+    target.owner === 'neutral' ? undefined : target.owner,
   )
+    .filter((candidate) => candidate.status !== 'moving')
+    .map((candidate) => candidate.id)
+
+  const divisions = { ...state.divisions }
+  divisions[divisionId] = {
+    ...division,
+    status: 'battle',
+    order: null,
+  }
+
+  for (const defenderId of defenderDivisionIds) {
+    const defender = divisions[defenderId]
+    if (!defender) continue
+    divisions[defenderId] = {
+      ...defender,
+      status: 'battle',
+      order: null,
+    }
+  }
 
   const battle: BattleState = {
-    id: `${owner}:${fromId}:${toId}:${state.tick}`,
-    attacker: owner,
-    defender: to.owner,
-    fromId,
-    toId,
-    committedDivisions: committed,
+    id: `battle:${division.owner}:${targetId}:${state.tick}:${state.battles.length}`,
+    attacker: division.owner,
+    defender: target.owner,
+    toId: targetId,
+    attackerDivisionIds: [divisionId],
+    defenderDivisionIds,
     progress: 0,
     stance,
     startedTick: state.tick,
   }
 
-  const territories = {
-    ...state.territories,
-    [fromId]: {
-      ...from,
-      divisions: Math.max(0, from.divisions - committed),
-      supply: Math.max(0, from.supply - stanceSupplyCost[stance]),
-    },
-  }
-
   return withEvent(
     {
       ...state,
-      territories,
+      divisions,
       battles: [...state.battles, battle],
     },
     'battle',
-    `${actorName(state, owner)} · ${from.name} → ${to.name} 작전 개시 · ${committed}개 사단`,
+    `${actorName(state, division.owner)} · ${division.name || '사단'} → ${target.name} 전투 개시`,
   )
 }
 
-export function captureTerritory(
-  state: GameState,
-  fromId: string,
-  toId: string,
-): GameState {
-  return startBattle(state, fromId, toId, 'player', state.attackStance)
-}
+function processDivisionMovement(state: GameState): GameState {
+  let next = state
+  let divisions = { ...next.divisions }
 
-function returnBattleSurvivors(
-  state: GameState,
-  battle: BattleState,
-  ratio: number,
-): GameState {
-  const from = state.territories[battle.fromId]
-  if (!from || from.owner !== battle.attacker) return state
+  for (const divisionId of Object.keys(divisions)) {
+    const division = divisions[divisionId]
+    if (division.status !== 'moving' || !division.order) continue
 
-  const survivors = Math.max(
-    0,
-    Math.floor(battle.committedDivisions * clamp(ratio, 0.35, 0.75)),
-  )
+    const remainingTicks = division.order.remainingTicks - 1
 
-  return {
-    ...state,
-    territories: {
-      ...state.territories,
-      [from.id]: {
-        ...from,
-        divisions: from.divisions + survivors,
-      },
-    },
+    if (remainingTicks > 0) {
+      divisions[divisionId] = {
+        ...division,
+        order: {
+          ...division.order,
+          remainingTicks,
+        },
+      }
+      continue
+    }
+
+    const nextTerritoryId = division.order.path[division.order.nextIndex]
+    const targetTerritory = next.territories[nextTerritoryId]
+
+    if (!targetTerritory) {
+      divisions[divisionId] = {
+        ...division,
+        status: 'idle',
+        order: null,
+      }
+      continue
+    }
+
+    if (targetTerritory.owner === division.owner) {
+      const nextIndex = division.order.nextIndex + 1
+      const completed = nextIndex >= division.order.path.length
+
+      divisions[divisionId] = {
+        ...division,
+        territoryId: nextTerritoryId,
+        supply: Math.max(20, division.supply - 1),
+        status: completed ? 'idle' : 'moving',
+        order: completed
+          ? null
+          : {
+              ...division.order,
+              nextIndex,
+              remainingTicks: DIVISION_MOVE_TICKS,
+              totalTicks: DIVISION_MOVE_TICKS,
+            },
+      }
+      continue
+    }
+
+    next = { ...next, divisions }
+    next = beginOrJoinBattle(
+      next,
+      divisionId,
+      nextTerritoryId,
+      division.owner === 'player' ? next.attackStance : stanceForAi(next),
+    )
+    divisions = { ...next.divisions }
   }
+
+  return syncTerritoryDivisionCounts({ ...next, divisions })
+}
+
+function updateDivisionReadiness(state: GameState): GameState {
+  const divisions = { ...state.divisions }
+  let changed = false
+
+  for (const [id, division] of Object.entries(divisions)) {
+    if (division.status === 'battle') continue
+    const territory = state.territories[division.territoryId]
+    if (!territory) continue
+
+    const supplyTarget = Math.min(100, territory.supply)
+    const supplyDelta = clamp((supplyTarget - division.supply) * 0.08, -2, 2)
+    const organizationGain =
+      division.status === 'moving' ? 0.25 : territory.owner === division.owner ? 1.5 : 0
+    const strengthGain =
+      division.status === 'idle' && territory.owner === division.owner && division.supply > 55
+        ? 0.18
+        : 0
+
+    const supply = clamp(division.supply + supplyDelta, 0, 100)
+    const organization = clamp(division.organization + organizationGain, 0, 100)
+    const strength = clamp(division.strength + strengthGain, 0, 100)
+    const status =
+      division.status === 'recovering' && organization >= 70
+        ? 'idle'
+        : division.status
+
+    if (
+      supply !== division.supply ||
+      organization !== division.organization ||
+      strength !== division.strength ||
+      status !== division.status
+    ) {
+      divisions[id] = {
+        ...division,
+        supply,
+        organization,
+        strength,
+        status,
+      }
+      changed = true
+    }
+  }
+
+  return changed ? { ...state, divisions } : state
+}
+
+function retreatDestination(
+  state: GameState,
+  division: DivisionUnit,
+  fromTargetId: string,
+): string | null {
+  const territory = state.territories[fromTargetId]
+  if (!territory) return null
+
+  return (
+    territory.neighbors.find(
+      (neighborId) => state.territories[neighborId]?.owner === division.owner,
+    ) ?? null
+  )
 }
 
 function processBattles(state: GameState): GameState {
   if (state.battles.length === 0) return state
 
   let next = state
-  const active: BattleState[] = []
+  const activeBattles: BattleState[] = []
 
   for (const battle of state.battles) {
-    const from = next.territories[battle.fromId]
-    const to = next.territories[battle.toId]
-
-    if (
-      !from ||
-      !to ||
-      from.owner !== battle.attacker ||
-      to.owner !== battle.defender
-    ) {
-      next = returnBattleSurvivors(next, battle, 0.65)
+    const target = next.territories[battle.toId]
+    if (!target || target.owner !== battle.defender) {
       continue
     }
 
-    const attackPower =
-      battle.committedDivisions *
-      DIVISION_POWER *
-      (0.62 + from.supply / 210) *
-      stancePower[battle.stance]
+    let divisions = { ...next.divisions }
 
-    const defensePower =
-      (to.divisions * DIVISION_POWER +
-        to.defense * DEFENSE_POWER +
-        (to.owner === 'neutral' ? 25 : 45)) *
-      (0.65 + to.supply / 230)
+    const attackerDivisionIds = battle.attackerDivisionIds.filter((id) => {
+      const division = divisions[id]
+      return division && division.owner === battle.attacker && division.status === 'battle'
+    })
 
-    const ratio = attackPower / Math.max(50, defensePower)
-    const jitter =
-      (((hashString(`${battle.id}:${next.tick}`) % 7) - 3) * 0.35)
-    const emptyBonus = to.divisions === 0 && to.defense === 0 ? 7 : 0
-    const delta = clamp((ratio - 1) * 13 + jitter + emptyBonus, -9, 15)
+    const targetDefenders =
+      battle.defender === 'neutral'
+        ? []
+        : Object.values(divisions)
+            .filter(
+              (division) =>
+                division.owner === battle.defender &&
+                division.territoryId === battle.toId &&
+                division.status !== 'moving',
+            )
+            .map((division) => division.id)
+
+    for (const id of targetDefenders) {
+      const division = divisions[id]
+      if (division && division.status !== 'battle') {
+        divisions[id] = { ...division, status: 'battle', order: null }
+      }
+    }
+
+    if (attackerDivisionIds.length === 0) {
+      for (const id of targetDefenders) {
+        const division = divisions[id]
+        if (division) divisions[id] = { ...division, status: 'recovering' }
+      }
+      next = { ...next, divisions }
+      continue
+    }
+
+    const attackerPower = attackerDivisionIds.reduce(
+      (sum, id) => sum + divisionPower(divisions[id]),
+      0,
+    ) * stancePower[battle.stance]
+
+    const defenderUnitPower = targetDefenders.reduce(
+      (sum, id) => sum + divisionPower(divisions[id]),
+      0,
+    )
+
+    const defenderPower =
+      defenderUnitPower +
+      target.defense * DEFENSE_POWER +
+      (battle.defender === 'neutral' ? 35 : 30)
+
+    const ratio = attackerPower / Math.max(45, defenderPower)
+    const jitter = ((hashString(`${battle.id}:${next.tick}`) % 9) - 4) * 0.3
+    const emptyBonus = targetDefenders.length === 0 ? 6 : 0
+    const delta = clamp((ratio - 1) * 11 + jitter + emptyBonus, -9, 14)
     const progress = battle.progress + delta
 
-    if (progress >= 100) {
-      const survivors = Math.max(
-        1,
-        Math.round(
-          battle.committedDivisions *
-            clamp(0.8 - to.divisions * 0.06 - to.defense * 0.05, 0.35, 0.8),
-        ),
+    const attackerOrgLoss = clamp(2.2 + Math.max(0, 1 - ratio) * 2.8, 1.5, 6)
+    const attackerStrengthLoss = clamp(0.35 + Math.max(0, 1 - ratio) * 0.65, 0.25, 1.4)
+    const defenderOrgLoss = clamp(2.4 + Math.max(0, ratio - 1) * 3.2, 1.5, 7)
+    const defenderStrengthLoss = clamp(0.3 + Math.max(0, ratio - 1) * 0.8, 0.2, 1.6)
+
+    for (const id of attackerDivisionIds) {
+      const division = divisions[id]
+      divisions[id] = {
+        ...division,
+        organization: clamp(division.organization - attackerOrgLoss, 0, 100),
+        strength: clamp(division.strength - attackerStrengthLoss, 0, 100),
+        supply: clamp(division.supply - 1.1, 0, 100),
+      }
+    }
+
+    for (const id of targetDefenders) {
+      const division = divisions[id]
+      divisions[id] = {
+        ...division,
+        organization: clamp(division.organization - defenderOrgLoss, 0, 100),
+        strength: clamp(division.strength - defenderStrengthLoss, 0, 100),
+        supply: clamp(division.supply - 0.8, 0, 100),
+      }
+    }
+
+    const attackerBroken = attackerDivisionIds.every(
+      (id) =>
+        divisions[id].organization <= 8 || divisions[id].strength <= 12,
+    )
+    const defenderBroken =
+      targetDefenders.length === 0 ||
+      targetDefenders.every(
+        (id) =>
+          divisions[id].organization <= 8 || divisions[id].strength <= 12,
       )
+
+    if (progress >= 100 || defenderBroken) {
+      const defeatedDefenderIds = new Set(targetDefenders)
+
+      for (const id of attackerDivisionIds) {
+        const division = divisions[id]
+        divisions[id] = {
+          ...division,
+          territoryId: battle.toId,
+          status: 'recovering',
+          order: null,
+          organization: Math.max(24, division.organization),
+          experience: clamp(division.experience + 3, 0, 100),
+        }
+      }
+
+      for (const id of targetDefenders) {
+        const division = divisions[id]
+        if (division.strength <= 18) {
+          delete divisions[id]
+          continue
+        }
+
+        const retreat = retreatDestination(
+          { ...next, divisions },
+          division,
+          battle.toId,
+        )
+
+        if (!retreat) {
+          delete divisions[id]
+          continue
+        }
+
+        divisions[id] = {
+          ...division,
+          territoryId: retreat,
+          status: 'recovering',
+          order: null,
+          organization: Math.max(16, division.organization),
+          experience: clamp(division.experience + 1, 0, 100),
+        }
+      }
 
       next = {
         ...next,
         selectedId:
           battle.attacker === 'player' ? battle.toId : next.selectedId,
+        divisions,
         territories: {
           ...next.territories,
-          [to.id]: {
-            ...to,
+          [battle.toId]: {
+            ...target,
             owner: battle.attacker,
-            divisions: survivors,
-            defense: Math.max(0, to.defense - 1),
-            supply: Math.max(30, Math.floor((from.supply + to.supply) / 2)),
+            defense: Math.max(0, target.defense - 1),
+            supply: Math.max(30, target.supply - 8),
           },
         },
       }
@@ -691,46 +1231,76 @@ function processBattles(state: GameState): GameState {
       next = withEvent(
         next,
         'capture',
-        `${actorName(next, battle.attacker)} · ${to.fullName} 점령`,
+        `${actorName(next, battle.attacker)} · ${target.fullName} 점령 · ${attackerDivisionIds.length}개 사단 진입`,
       )
+
+      for (const id of defeatedDefenderIds) {
+        if (!next.divisions[id]) continue
+      }
       continue
     }
 
-    if (progress <= -100) {
-      next = returnBattleSurvivors(next, battle, 0.5)
+    if (progress <= -100 || attackerBroken) {
+      for (const id of attackerDivisionIds) {
+        const division = divisions[id]
+        if (division.strength <= 15) {
+          delete divisions[id]
+          continue
+        }
 
-      const currentTarget = next.territories[to.id]
-      next = {
-        ...next,
-        territories: {
-          ...next.territories,
-          [to.id]: {
-            ...currentTarget,
-            divisions: Math.max(
-              0,
-              currentTarget.divisions -
-                Math.max(0, Math.floor(battle.committedDivisions * 0.25)),
-            ),
-            supply: Math.max(20, currentTarget.supply - 4),
-          },
-        },
+        divisions[id] = {
+          ...division,
+          status: 'recovering',
+          order: null,
+          organization: Math.max(14, division.organization),
+          experience: clamp(division.experience + 1, 0, 100),
+        }
+      }
+
+      for (const id of targetDefenders) {
+        const division = divisions[id]
+        if (division) {
+          divisions[id] = {
+            ...division,
+            status: 'recovering',
+            organization: Math.max(25, division.organization),
+          }
+        }
       }
 
       next = withEvent(
-        next,
+        { ...next, divisions },
         'defense',
-        `${actorName(next, battle.attacker)} · ${to.fullName} 공세 실패`,
+        `${actorName(next, battle.attacker)} · ${target.fullName} 공세 실패`,
       )
       continue
     }
 
-    active.push({ ...battle, progress })
+    next = { ...next, divisions }
+    activeBattles.push({
+      ...battle,
+      attackerDivisionIds,
+      defenderDivisionIds: targetDefenders,
+      progress,
+    })
   }
 
-  return {
+  return syncTerritoryDivisionCounts({
     ...next,
-    battles: active,
-  }
+    battles: activeBattles,
+  })
+}
+
+export function captureTerritory(
+  state: GameState,
+  fromId: string,
+  toId: string,
+): GameState {
+  const divisionIds = divisionsAt(state, fromId, 'player')
+    .filter((division) => division.status !== 'battle')
+    .map((division) => division.id)
+
+  return issueDivisionMoveOrders(state, divisionIds, toId)
 }
 
 export function transferTroops(
@@ -738,117 +1308,164 @@ export function transferTroops(
   fromId: string,
   toId: string,
 ): GameState {
-  if (state.phase !== 'running') return state
-
-  const from = state.territories[fromId]
-  const to = state.territories[toId]
-  const engaged = state.battles.some(
-    (battle) => battle.fromId === fromId || battle.toId === fromId,
+  const division = divisionsAt(state, fromId, 'player').find(
+    (candidate) => candidate.status !== 'battle',
   )
-
-  if (
-    !from ||
-    !to ||
-    engaged ||
-    from.owner !== 'player' ||
-    to.owner !== 'player' ||
-    !from.neighbors.includes(toId) ||
-    from.divisions <= 1
-  ) {
-    return state
-  }
-
-  const territories = { ...state.territories }
-  territories[fromId] = {
-    ...from,
-    divisions: from.divisions - 1,
-  }
-  territories[toId] = {
-    ...to,
-    divisions: to.divisions + 1,
-  }
-
-  return withEvent(
-    {
-      ...state,
-      selectedId: toId,
-      territories,
-    },
-    'support',
-    `${from.fullName} → ${to.fullName} · 1개 사단 재배치`,
-  )
+  if (!division) return state
+  return issueDivisionMoveOrders(state, [division.id], toId)
 }
 
 function targetScore(
+  state: GameState,
   target: TerritoryState,
   difficulty: Difficulty,
 ): number {
   if (difficulty === 'easy') return 0
   const neutralBonus = target.owner === 'neutral' ? 30 : 0
-  const militaryWeakness = Math.max(0, 500 - territoryMilitaryPower(target))
+  const defenders = Object.values(state.divisions).filter(
+    (division) =>
+      division.territoryId === target.id &&
+      division.owner === target.owner,
+  )
+  const militaryWeakness = Math.max(
+    0,
+    450 -
+      defenders.reduce((sum, division) => sum + divisionPower(division), 0) -
+      target.defense * DEFENSE_POWER,
+  )
   const supplyWeakness = Math.max(0, 100 - target.supply)
   const factoryValue = target.factories * 25
   return neutralBonus + militaryWeakness * 0.08 + supplyWeakness * 0.3 + factoryValue
 }
 
+function nearestFriendlyFront(
+  state: GameState,
+  division: DivisionUnit,
+): TerritoryState | null {
+  const candidates = Object.values(state.territories).filter(
+    (territory) =>
+      territory.owner === division.owner &&
+      territory.neighbors.some(
+        (id) => state.territories[id]?.owner !== division.owner,
+      ),
+  )
+
+  let best: TerritoryState | null = null
+  let bestPath = Number.POSITIVE_INFINITY
+
+  for (const candidate of candidates) {
+    const path = findDivisionPath(state, division, candidate.id)
+    if (path && path.length < bestPath) {
+      bestPath = path.length
+      best = candidate
+    }
+  }
+
+  return best
+}
+
 function runAiTurn(state: GameState, owner: AiFactionId): GameState {
   const battleCap =
-    state.difficulty === 'easy' ? 1 : state.difficulty === 'hard' ? 3 : 2
+    state.difficulty === 'easy' ? 1 : state.difficulty === 'hard' ? 4 : 2
   const activeBattles = state.battles.filter(
     (battle) => battle.attacker === owner,
   ).length
   if (activeBattles >= battleCap) return state
 
-  const minimumDivisions =
-    state.difficulty === 'easy' ? 3 : state.difficulty === 'hard' ? 1 : 2
-
-  const candidates = Object.values(state.territories).filter(
-    (territory) =>
-      territory.owner === owner &&
-      territory.divisions >= minimumDivisions &&
-      !state.battles.some(
-        (battle) =>
-          battle.fromId === territory.id || battle.toId === territory.id,
-      ) &&
-      territory.neighbors.some(
-        (id) => state.territories[id]?.owner !== owner,
-      ),
-  )
-
-  if (candidates.length === 0) return state
-
-  const from =
-    candidates[hashString(`${owner}:${state.tick}`) % candidates.length]
-  const targets = from.neighbors
-    .map((id) => state.territories[id])
+  const idleDivisions = Object.values(state.divisions)
     .filter(
-      (territory): territory is TerritoryState =>
-        Boolean(
-          territory &&
-            territory.owner !== owner &&
-            !state.battles.some(
-              (battle) =>
-                battle.fromId === territory.id || battle.toId === territory.id,
-            ),
-        ),
+      (division) =>
+        division.owner === owner &&
+        (division.status === 'idle' || division.status === 'recovering') &&
+        division.organization >= 45 &&
+        division.strength >= 45,
+    )
+    .sort(
+      (a, b) =>
+        b.organization - a.organization ||
+        b.strength - a.strength ||
+        a.id.localeCompare(b.id),
     )
 
-  if (targets.length === 0) return state
+  const division = idleDivisions[0]
+  if (!division) return state
 
-  let to: TerritoryState
-  if (state.difficulty === 'easy') {
-    to = targets[hashString(`${from.id}:${state.tick}`) % targets.length]
-  } else {
-    to = [...targets].sort((a, b) => {
-      const difference =
-        targetScore(b, state.difficulty) -
-        targetScore(a, state.difficulty)
-      if (difference !== 0) return difference
-      return a.id.localeCompare(b.id)
-    })[0]
+  const territory = state.territories[division.territoryId]
+  if (!territory) return state
+
+  const hostileNeighbors = territory.neighbors
+    .map((id) => state.territories[id])
+    .filter(
+      (candidate): candidate is TerritoryState =>
+        Boolean(candidate && candidate.owner !== owner),
+    )
+
+  if (hostileNeighbors.length > 0) {
+    const target =
+      state.difficulty === 'easy'
+        ? hostileNeighbors[
+            hashString(`${division.id}:${state.tick}`) % hostileNeighbors.length
+          ]
+        : [...hostileNeighbors].sort(
+            (a, b) =>
+              targetScore(state, b, state.difficulty) -
+                targetScore(state, a, state.difficulty) ||
+              a.id.localeCompare(b.id),
+          )[0]
+
+    return issueDivisionMoveOrdersForOwner(
+      state,
+      [division.id],
+      target.id,
+      owner,
+    )
   }
 
-  return startBattle(state, from.id, to.id, owner, stanceForAi(state))
+  const front = nearestFriendlyFront(state, division)
+  if (!front) return state
+
+  return issueDivisionMoveOrdersForOwner(
+    state,
+    [division.id],
+    front.id,
+    owner,
+  )
+}
+
+function issueDivisionMoveOrdersForOwner(
+  state: GameState,
+  divisionIds: string[],
+  targetId: string,
+  owner: PlayableFactionId,
+): GameState {
+  const divisions = { ...state.divisions }
+  let issued = 0
+
+  for (const divisionId of divisionIds) {
+    const division = divisions[divisionId]
+    if (!division || division.owner !== owner || division.status === 'battle') {
+      continue
+    }
+
+    const path = findDivisionPath(state, division, targetId)
+    if (!path || path.length === 0) continue
+
+    divisions[divisionId] = {
+      ...division,
+      status: 'moving',
+      order: {
+        kind: 'move',
+        targetId,
+        path,
+        nextIndex: 0,
+        remainingTicks: DIVISION_MOVE_TICKS,
+        totalTicks: DIVISION_MOVE_TICKS,
+      },
+    }
+    issued += 1
+  }
+
+  return issued > 0 ? { ...state, divisions } : state
 }
 
 function aiBuild(state: GameState, owner: AiFactionId): GameState {
@@ -877,7 +1494,6 @@ function aiBuild(state: GameState, owner: AiFactionId): GameState {
     .sort(
       (a, b) =>
         a.divisions - b.divisions ||
-        territoryMilitaryPower(a) - territoryMilitaryPower(b) ||
         a.id.localeCompare(b.id),
     )[0]
 
@@ -944,51 +1560,44 @@ function runAutoOffensive(state: GameState): GameState {
   if (!state.autoOffensive) return state
   if (state.battles.some((battle) => battle.attacker === 'player')) return state
 
-  const candidates = Object.values(state.territories)
+  const division = Object.values(state.divisions)
     .filter(
-      (territory) =>
-        territory.owner === 'player' &&
-        territory.divisions >= 2 &&
-        !state.battles.some(
-          (battle) =>
-            battle.fromId === territory.id || battle.toId === territory.id,
-        ) &&
-        territory.neighbors.some(
-          (neighborId) =>
-            state.territories[neighborId]?.owner !== 'player',
-        ),
+      (candidate) =>
+        candidate.owner === 'player' &&
+        candidate.status === 'idle' &&
+        candidate.organization >= 55,
     )
     .sort(
       (a, b) =>
-        b.divisions - a.divisions ||
-        b.supply - a.supply ||
+        b.organization - a.organization ||
+        b.strength - a.strength ||
         a.id.localeCompare(b.id),
     )
+    .find((candidate) => {
+      const territory = state.territories[candidate.territoryId]
+      return territory?.neighbors.some(
+        (id) => state.territories[id]?.owner !== 'player',
+      )
+    })
 
-  const from = candidates[0]
-  if (!from) return state
+  if (!division) return state
+  const territory = state.territories[division.territoryId]
+  if (!territory) return state
 
-  const to = from.neighbors
+  const target = territory.neighbors
     .map((id) => state.territories[id])
     .filter(
-      (territory): territory is TerritoryState =>
-        Boolean(
-          territory &&
-            territory.owner !== 'player' &&
-            !state.battles.some(
-              (battle) =>
-                battle.fromId === territory.id || battle.toId === territory.id,
-            ),
-        ),
+      (candidate): candidate is TerritoryState =>
+        Boolean(candidate && candidate.owner !== 'player'),
     )
     .sort(
       (a, b) =>
-        territoryMilitaryPower(a) - territoryMilitaryPower(b) ||
-        a.id.localeCompare(b.id),
+        targetScore(state, a, state.difficulty) -
+        targetScore(state, b, state.difficulty),
     )[0]
 
-  if (!to) return state
-  return startBattle(state, from.id, to.id, 'player', state.attackStance)
+  if (!target) return state
+  return issueDivisionMoveOrders(state, [division.id], target.id)
 }
 
 function updatePhase(state: GameState): GameState {
@@ -1009,11 +1618,18 @@ function updatePhase(state: GameState): GameState {
     )
   }
 
-  if (playerOwned === 0 && state.phase === 'running') {
+  const playerDivisions = Object.values(state.divisions).filter(
+    (division) => division.owner === 'player',
+  ).length
+
+  if (
+    state.phase === 'running' &&
+    (playerOwned === 0 || playerDivisions === 0)
+  ) {
     return withEvent(
       { ...state, phase: 'defeat', running: false },
       'system',
-      '플레이어 세력 소멸',
+      '플레이어 세력의 작전 가능 사단이 소멸했습니다.',
     )
   }
 
@@ -1082,7 +1698,9 @@ export function advanceTick(state: GameState): GameState {
   }
 
   next = processProduction(next)
+  next = processDivisionMovement(next)
   next = processBattles(next)
+  next = updateDivisionReadiness(next)
 
   if (nextTick % ECONOMY_INTERVAL === 0) {
     next = applyIncome(next)
@@ -1105,7 +1723,7 @@ export function advanceTick(state: GameState): GameState {
     next = runAutoOffensive(next)
   }
 
-  return updatePhase(next)
+  return updatePhase(syncTerritoryDivisionCounts(next))
 }
 
 export function ownerCounts(state: GameState): Record<FactionId, number> {
