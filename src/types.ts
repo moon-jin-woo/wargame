@@ -22,8 +22,23 @@ export type TechnologyId =
   | 'fieldEngineering'
   | 'defensiveWorks'
   | 'mobilityEngineering'
+  | 'industrialAutomation'
+  | 'regionalPlanning'
+  | 'networkScheduling'
+  | 'depotManagement'
+  | 'armyGroupCommand'
+  | 'rapidRedeployment'
+  | 'terrainAdaptation'
+  | 'civilEngineering'
 export type TechnologyCategory = 'industry' | 'logistics' | 'command' | 'engineering'
 export type StrategyDoctrine = 'balanced' | 'maneuver' | 'concentrated' | 'defensive' | 'logistics'
+export type NationalStrategy =
+  | 'balancedDevelopment'
+  | 'industrialPush'
+  | 'railwayPriority'
+  | 'mobileCommand'
+  | 'fortifiedState'
+  | 'researchInitiative'
 export type DivisionOrderType = 'move' | 'attack'
 export type DivisionStatus = 'idle' | 'moving' | 'attacking' | 'defending'
 export type DivisionRole = 'line' | 'mobile' | 'guard'
@@ -106,6 +121,7 @@ export interface ArmyGroup {
   objectiveId: string | null
   planStatus: ArmyPlanStatus
   strategy: StrategyDoctrine
+  theater: string | null
   preparation: number
   createdTick: number
 }
@@ -159,6 +175,7 @@ export interface GameState {
     PlayableFactionId,
     Record<TechnologyId, number>
   >
+  nationalStrategies: Record<PlayableFactionId, NationalStrategy>
   aiCount: AiCount
   difficulty: Difficulty
   attackStance: AttackStance

@@ -3266,3 +3266,228 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Strategic command overhaul */
+.national-strategy-panel {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(186, 169, 126, 0.18);
+  border-radius: 4px;
+  background: rgba(11, 13, 13, 0.56);
+}
+
+.national-strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.national-strategy-grid > button {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(186, 169, 126, 0.16);
+  border-radius: 3px;
+  background: #141716;
+  color: #aaa99f;
+  text-align: left;
+  cursor: pointer;
+}
+
+.national-strategy-grid > button.active {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.12);
+}
+
+.national-strategy-grid strong {
+  color: #e2ddcf;
+  font-size: 9px;
+}
+
+.national-strategy-grid span {
+  color: #868980;
+  font-size: 7px;
+  line-height: 1.4;
+}
+
+.technology-effect {
+  display: block;
+  margin-top: 5px;
+  color: #c0aa70;
+  font-size: 7px;
+  line-height: 1.35;
+}
+
+.railway-route-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  z-index: 8;
+  display: grid;
+  min-width: min(460px, calc(100% - 32px));
+  gap: 3px;
+  padding: 9px 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(215, 193, 130, 0.65);
+  border-radius: 4px;
+  background: rgba(14, 16, 15, 0.94);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.railway-route-hint strong {
+  color: #e4cf94;
+  font-size: 9px;
+}
+
+.railway-route-hint span {
+  padding-right: 58px;
+  color: #a3a59c;
+  font-size: 8px;
+}
+
+.railway-route-hint button {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  padding: 5px 8px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(186, 169, 126, 0.24);
+  border-radius: 3px;
+  background: #171a18;
+  color: #bcb8aa;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.route-planning-active {
+  border-color: #d7c182 !important;
+  background: rgba(215, 193, 130, 0.12) !important;
+}
+
+.foreign-national-strategy {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid rgba(186, 169, 126, 0.17);
+  border-radius: 3px;
+  background: rgba(16, 18, 17, 0.62);
+}
+
+.foreign-national-strategy span,
+.foreign-national-strategy small {
+  color: #85887f;
+  font-size: 8px;
+}
+
+.foreign-national-strategy strong {
+  color: #dfd9c9;
+  font-size: 11px;
+}
+
+.foreign-national-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.foreign-national-grid > div {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(186, 169, 126, 0.14);
+  background: rgba(12, 14, 14, 0.55);
+}
+
+.foreign-national-grid span,
+.foreign-national-grid strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foreign-national-grid span {
+  color: #85887f;
+  font-size: 7px;
+}
+
+.foreign-national-grid strong {
+  margin-top: 2px;
+  color: #ded9cb;
+  font-size: 9px;
+}
+
+.foreign-industry-overview {
+  margin: 0;
+}
+
+.foreign-tech-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.foreign-tech-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.foreign-tech-grid section {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-height: 48px;
+  padding: 7px;
+  border: 1px solid rgba(186, 169, 126, 0.12);
+  background: rgba(12, 14, 14, 0.42);
+}
+
+.foreign-tech-grid section > strong {
+  color: #cdbb88;
+  font-size: 8px;
+}
+
+.foreign-tech-grid section > span {
+  color: #979a91;
+  font-size: 7px;
+}
+
+.foreign-corps-card header span {
+  line-height: 1.35;
+}
+
+.deep-tech-panel {
+  width: min(820px, calc(100% - 28px));
+}
+
+.deep-tech-panel .technology-tree {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .national-strategy-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .foreign-national-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deep-tech-panel .technology-tree,
+  .foreign-tech-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .national-strategy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .railway-route-hint {
+    bottom: 78px;
+  }
+}

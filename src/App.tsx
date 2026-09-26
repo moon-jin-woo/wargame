@@ -35,6 +35,7 @@ import {
   ownerCounts,
   playerArmies,
   playerDivisions,
+  planRailwayRoute,
   productionDuration,
   productionKindLabel,
   renameArmy,
@@ -47,12 +48,16 @@ import {
   assignDivisionToArmy,
   startGame,
   researchTechnology,
+  setNationalStrategy,
   technologyAvailable,
   technologyCategories,
   technologyCost,
   technologyDefinitions,
+  technologyEffectSummary,
   TECHNOLOGY_IDS,
   technologyLabels,
+  nationalStrategyDescriptions,
+  nationalStrategyLabels,
   strategyDescriptions,
   strategyLabels,
   terrainLabels,
@@ -73,6 +78,7 @@ import type {
   GameSpeed,
   GameState,
   IndustryType,
+  NationalStrategy,
   PlayableFactionId,
   ProductionKind,
   StrategyDoctrine,
@@ -99,6 +105,15 @@ const INDUSTRY_TYPES: IndustryType[] = [
   'logistics',
   'infrastructure',
   'research',
+]
+
+const NATIONAL_STRATEGIES: NationalStrategy[] = [
+  'balancedDevelopment',
+  'industrialPush',
+  'railwayPriority',
+  'mobileCommand',
+  'fortifiedState',
+  'researchInitiative',
 ]
 
 const TERRAIN_COLORS: Record<TerritoryState['terrain'], string> = {
@@ -213,6 +228,7 @@ function App() {
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
   const [hqFaction, setHqFaction] = useState<PlayableFactionId>('player')
+  const [railwayRouteStart, setRailwayRouteStart] = useState<string | null>(null)
   const [objectiveMode, setObjectiveMode] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
@@ -790,6 +806,61 @@ function App() {
     [game?.divisionUnits, hqFaction],
   )
 
+  const hqNationalStats = useMemo(() => {
+    if (!game) return null
+
+    const owned = Object.values(game.territories).filter(
+      (territory) => territory.owner === hqFaction,
+    )
+    const industry = {
+      civilian: 0,
+      military: 0,
+      logistics: 0,
+      infrastructure: 0,
+      research: 0,
+    }
+    let railway = 0
+    let supply = 0
+
+    for (const territory of owned) {
+      for (const kind of INDUSTRY_TYPES) {
+        industry[kind] += territory.industry[kind]
+      }
+      railway += territory.railway
+      supply += territory.supply
+    }
+
+    const technologies = game.technologies[hqFaction]
+    const researchedNodes = TECHNOLOGY_IDS.filter(
+      (technology) => (technologies[technology] ?? 0) > 0,
+    ).length
+    const technologyLevels = TECHNOLOGY_IDS.reduce(
+      (sum, technology) => sum + (technologies[technology] ?? 0),
+      0,
+    )
+
+    return {
+      territories: owned.length,
+      industry,
+      railway,
+      averageSupply:
+        owned.length > 0 ? Math.round(supply / owned.length) : 0,
+      researchedNodes,
+      technologyLevels,
+      funds: game.funds[hqFaction],
+      researchPoints: game.researchPoints[hqFaction],
+      nationalStrategy:
+        game.nationalStrategies[hqFaction] ?? 'balancedDevelopment',
+    }
+  }, [
+    game?.territories,
+    game?.technologies,
+    game?.funds,
+    game?.researchPoints,
+    game?.nationalStrategies,
+    hqFaction,
+  ])
+
   const playerDivisionList = useMemo(
     () => (game ? playerDivisions(game) : []),
     [game?.divisionUnits],
@@ -1315,6 +1386,24 @@ function App() {
   }, [game?.territories, selected?.id])
 
   const handleTerritoryCommand = (targetId: string) => {
+    if (railwayRouteStart) {
+      setGame((previous) => {
+        if (!previous || !previous.territories[targetId]) return previous
+        const planned = planRailwayRoute(
+          previous,
+          railwayRouteStart,
+          targetId,
+        )
+        return {
+          ...planned,
+          selectedId: targetId,
+        }
+      })
+      setRailwayRouteStart(null)
+      setMapMode('railway')
+      return
+    }
+
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
@@ -1717,6 +1806,44 @@ function App() {
               </div>
             </div>
 
+            <div className="national-strategy-panel">
+              <div className="panel-section-title">
+                <strong>국가 전략</strong>
+                <span>
+                  {nationalStrategyLabels[
+                    game.nationalStrategies.player ??
+                      'balancedDevelopment'
+                  ]}
+                </span>
+              </div>
+              <div className="national-strategy-grid">
+                {NATIONAL_STRATEGIES.map((strategy) => (
+                  <button
+                    key={strategy}
+                    className={
+                      game.nationalStrategies.player === strategy
+                        ? 'active'
+                        : ''
+                    }
+                    onClick={() =>
+                      setGame((previous) =>
+                        previous
+                          ? setNationalStrategy(
+                              previous,
+                              'player',
+                              strategy,
+                            )
+                          : previous,
+                      )
+                    }
+                  >
+                    <strong>{nationalStrategyLabels[strategy]}</strong>
+                    <span>{nationalStrategyDescriptions[strategy]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="technology-tree">
               {(
                 ['industry', 'logistics', 'command', 'engineering'] as TechnologyCategory[]
@@ -1755,6 +1882,15 @@ function App() {
                             <div>
                               <strong>{technologyLabels[technology]}</strong>
                               <span>{technologyDescription(technology)}</span>
+                              {!maxed && (
+                                <small className="technology-effect">
+                                  다음 레벨 ·{' '}
+                                  {technologyEffectSummary(
+                                    technology,
+                                    level,
+                                  )}
+                                </small>
+                              )}
                             </div>
                             <b>
                               Lv.{level}/{definition.maxLevel}
@@ -1977,6 +2113,115 @@ function App() {
                   </small>
                 </div>
 
+                {hqNationalStats && (
+                  <>
+                    <div className="foreign-national-strategy">
+                      <span>국가 전략</span>
+                      <strong>
+                        {
+                          nationalStrategyLabels[
+                            hqNationalStats.nationalStrategy
+                          ]
+                        }
+                      </strong>
+                      <small>
+                        {
+                          nationalStrategyDescriptions[
+                            hqNationalStats.nationalStrategy
+                          ]
+                        }
+                      </small>
+                    </div>
+
+                    <div className="foreign-national-grid">
+                      <div>
+                        <span>영토</span>
+                        <strong>{hqNationalStats.territories}</strong>
+                      </div>
+                      <div>
+                        <span>자금</span>
+                        <strong>
+                          {hqNationalStats.funds.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>연구점수</span>
+                        <strong>
+                          {hqNationalStats.researchPoints.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>평균 보급</span>
+                        <strong>{hqNationalStats.averageSupply}%</strong>
+                      </div>
+                      <div>
+                        <span>철도 단계 합계</span>
+                        <strong>{hqNationalStats.railway}</strong>
+                      </div>
+                      <div>
+                        <span>기술</span>
+                        <strong>
+                          {hqNationalStats.researchedNodes}/
+                          {TECHNOLOGY_IDS.length}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="industry-overview foreign-industry-overview">
+                      {INDUSTRY_TYPES.map((kind) => (
+                        <div key={kind}>
+                          <span>{industryLabels[kind]}</span>
+                          <strong>
+                            {hqNationalStats.industry[kind]}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="foreign-tech-summary">
+                      <div className="panel-section-title">
+                        <strong>기술 현황</strong>
+                        <span>
+                          총 레벨 {hqNationalStats.technologyLevels}
+                        </span>
+                      </div>
+                      <div className="foreign-tech-grid">
+                        {(
+                          [
+                            'industry',
+                            'logistics',
+                            'command',
+                            'engineering',
+                          ] as TechnologyCategory[]
+                        ).map((category) => (
+                          <section key={category}>
+                            <strong>
+                              {technologyCategories[category].label}
+                            </strong>
+                            {TECHNOLOGY_IDS.filter(
+                              (technology) =>
+                                technologyDefinitions[technology]
+                                  .category === category &&
+                                (game.technologies[hqFaction][
+                                  technology
+                                ] ?? 0) > 0,
+                            ).map((technology) => (
+                              <span key={technology}>
+                                {technologyLabels[technology]} Lv.
+                                {
+                                  game.technologies[hqFaction][
+                                    technology
+                                  ]
+                                }
+                              </span>
+                            ))}
+                          </section>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="foreign-corps-list">
                   {hqArmyList.length === 0 ? (
                     <p className="panel-empty">
@@ -1988,7 +2233,10 @@ function App() {
                         <header>
                           <div>
                             <strong>{army.name}</strong>
-                            <span>{army.commander || '지휘관 미지정'}</span>
+                            <span>
+                              {army.commander || '지휘관 미지정'} ·{' '}
+                              {army.theater || '예비 전구'}
+                            </span>
                           </div>
                           <b>{strategyLabels[army.strategy]}</b>
                         </header>
@@ -2530,6 +2778,17 @@ function App() {
             </span>
           </div>
         )}
+
+        {game && railwayRouteStart && (
+          <div className="railway-route-hint">
+            <strong>철도 노선 계획</strong>
+            <span>
+              시작점 {game.territories[railwayRouteStart]?.fullName ?? '미지정'} · 지도에서 아군 영토 종점을 클릭
+            </span>
+            <button onClick={() => setRailwayRouteStart(null)}>취소</button>
+          </div>
+        )}
+
 
         <nav className="operations-dock">
           <button
@@ -3073,6 +3332,33 @@ function App() {
                       </span>
                     </button>
                   ))}
+
+                  <button
+                    className={
+                      railwayRouteStart === selected.id
+                        ? 'route-planning-active'
+                        : ''
+                    }
+                    onClick={() => {
+                      if (railwayRouteStart) {
+                        setRailwayRouteStart(null)
+                      } else {
+                        setRailwayRouteStart(selected.id)
+                        setMapMode('railway')
+                      }
+                    }}
+                  >
+                    <strong>
+                      {railwayRouteStart === selected.id
+                        ? '철도 노선 지정 취소'
+                        : '철도 노선 계획'}
+                    </strong>
+                    <span>
+                      {railwayRouteStart === selected.id
+                        ? '지도에서 종점을 클릭하면 아군 영토를 따라 경로 전체가 건설 대기열에 등록됩니다.'
+                        : '이 지역을 시작점으로 지정한 뒤 지도에서 종점을 선택합니다.'}
+                    </span>
+                  </button>
 
                   <button
                     disabled={

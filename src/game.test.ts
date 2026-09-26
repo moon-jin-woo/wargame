@@ -13,11 +13,14 @@ import {
   executeArmyPlan,
   FACTORY_COST,
   issueDivisionOrder,
+  planRailwayRoute,
   PRODUCTION_TICKS,
   researchTechnology,
   setArmyObjective,
   setArmyStrategy,
   setDivisionRole,
+  startGame,
+  setNationalStrategy,
 } from './game'
 import type { DivisionUnit, GameState, TerritoryState } from './types'
 
@@ -374,6 +377,125 @@ describe('division unit game loop', () => {
     state = setArmyStrategy(state, armyId, 'maneuver')
 
     expect(state.armies[armyId].strategy).toBe('maneuver')
+  })
+
+
+  it('plans a railway route across multiple friendly territories', () => {
+    let state = runningState()
+    state = {
+      ...state,
+      funds: {
+        ...state.funds,
+        player: 2000,
+      },
+    }
+
+    state = planRailwayRoute(state, 'a', 'c')
+
+    const railwayOrders = state.productionQueue.filter(
+      (order) => order.kind === 'railway',
+    )
+    expect(railwayOrders.map((order) => order.territoryId)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+  })
+
+  it('changes the national strategy independently from corps strategy', () => {
+    let state = runningState()
+
+    state = setNationalStrategy(state, 'player', 'railwayPriority')
+
+    expect(state.nationalStrategies.player).toBe('railwayPriority')
+  })
+
+  it('keeps late technology locked until its branch prerequisites are met', () => {
+    let state = runningState()
+    state = {
+      ...state,
+      researchPoints: {
+        ...state.researchPoints,
+        player: 10000,
+      },
+    }
+
+    const blocked = researchTechnology(
+      state,
+      'player',
+      'industrialAutomation',
+    )
+    expect(blocked.technologies.player.industrialAutomation).toBe(0)
+
+    state = {
+      ...state,
+      technologies: {
+        ...state.technologies,
+        player: {
+          ...state.technologies.player,
+          industrialMethods: 2,
+          constructionEngineering: 2,
+          massProduction: 1,
+        },
+      },
+    }
+    state = researchTechnology(
+      state,
+      'player',
+      'industrialAutomation',
+    )
+
+    expect(state.technologies.player.industrialAutomation).toBe(1)
+  })
+
+  it('creates multiple AI corps at game start when enough AI divisions exist', () => {
+    const territories: Record<string, TerritoryState> = {
+      a: territory('a', 'neutral', ['b'], {
+        centroid: [126, 35],
+        sidoName: '플레이어권',
+      }),
+      b: territory('b', 'neutral', ['a', 'c'], {
+        centroid: [126.1, 35],
+        sidoName: '플레이어권',
+      }),
+      c: territory('c', 'neutral', ['b'], {
+        centroid: [126.2, 35],
+        sidoName: '플레이어권',
+      }),
+      z: territory('z', 'neutral', ['v', 'w', 'x', 'y'], {
+        centroid: [131, 39],
+        sidoName: 'AI권',
+      }),
+      v: territory('v', 'neutral', ['z'], {
+        centroid: [130, 38],
+        sidoName: 'AI권',
+      }),
+      w: territory('w', 'neutral', ['z'], {
+        centroid: [130.1, 38],
+        sidoName: 'AI권',
+      }),
+      x: territory('x', 'neutral', ['z'], {
+        centroid: [130, 38.1],
+        sidoName: 'AI권',
+      }),
+      y: territory('y', 'neutral', ['z'], {
+        centroid: [130.1, 38.1],
+        sidoName: 'AI권',
+      }),
+    }
+
+    let state = createInitialState(territories, 'test-ai-corps')
+    state = { ...state, aiCount: 1 }
+    state = startGame(state, 'a')
+
+    const redCorps = Object.values(state.armies).filter(
+      (army) => army.owner === 'red',
+    )
+
+    expect(redCorps.length).toBeGreaterThanOrEqual(4)
+    expect(
+      redCorps.every((army) => typeof army.theater === 'string'),
+    ).toBe(true)
   })
 
 })

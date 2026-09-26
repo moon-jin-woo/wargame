@@ -12,6 +12,7 @@ import type {
   GameEventKind,
   GameState,
   IndustryType,
+  NationalStrategy,
   PlayableFactionId,
   ProductionKind,
   ProductionOrder,
@@ -269,6 +270,86 @@ export const technologyDefinitions: Record<TechnologyId, TechnologyDefinition> =
     costGrowth: 85,
     prerequisites: { fieldEngineering: 1, railOperations: 1 },
   },
+  industrialAutomation: {
+    id: 'industrialAutomation',
+    label: '산업 자동화',
+    category: 'industry',
+    description: '후반 산업 수익과 사단 생산 효율을 추가로 높입니다.',
+    maxLevel: 3,
+    baseCost: 205,
+    costGrowth: 95,
+    prerequisites: { massProduction: 1, constructionEngineering: 2 },
+  },
+  regionalPlanning: {
+    id: 'regionalPlanning',
+    label: '권역 개발 계획',
+    category: 'industry',
+    description: '인프라가 건설과 지역 생산에 주는 효과를 강화합니다.',
+    maxLevel: 2,
+    baseCost: 185,
+    costGrowth: 90,
+    prerequisites: { constructionEngineering: 2 },
+  },
+  networkScheduling: {
+    id: 'networkScheduling',
+    label: '철도망 운행 계획',
+    category: 'logistics',
+    description: '연결 철도망의 이동·보급 효율을 정교하게 개선합니다.',
+    maxLevel: 3,
+    baseCost: 195,
+    costGrowth: 90,
+    prerequisites: { railOperations: 2, supplyOptimization: 1 },
+  },
+  depotManagement: {
+    id: 'depotManagement',
+    label: '보급 거점 관리',
+    category: 'logistics',
+    description: '물류센터와 지역 보급 회복의 효율을 높입니다.',
+    maxLevel: 2,
+    baseCost: 180,
+    costGrowth: 90,
+    prerequisites: { supplyOptimization: 1 },
+  },
+  armyGroupCommand: {
+    id: 'armyGroupCommand',
+    label: '집단 지휘 체계',
+    category: 'command',
+    description: '다수 군단의 계획 준비도와 지휘 보정을 강화합니다.',
+    maxLevel: 3,
+    baseCost: 210,
+    costGrowth: 100,
+    prerequisites: { staffCoordination: 1, operationalPlanning: 2 },
+  },
+  rapidRedeployment: {
+    id: 'rapidRedeployment',
+    label: '신속 재배치',
+    category: 'command',
+    description: '아군 지역에서 사단 이동과 작전 전환을 빠르게 합니다.',
+    maxLevel: 2,
+    baseCost: 190,
+    costGrowth: 95,
+    prerequisites: { commandNetwork: 2, mobilityEngineering: 1 },
+  },
+  terrainAdaptation: {
+    id: 'terrainAdaptation',
+    label: '지형 적응',
+    category: 'engineering',
+    description: '불리한 지형의 이동·공세 패널티를 완화합니다.',
+    maxLevel: 3,
+    baseCost: 195,
+    costGrowth: 95,
+    prerequisites: { mobilityEngineering: 1, fieldEngineering: 2 },
+  },
+  civilEngineering: {
+    id: 'civilEngineering',
+    label: '토목 체계화',
+    category: 'engineering',
+    description: '철도·인프라·방어 공사의 건설 시간을 추가 단축합니다.',
+    maxLevel: 2,
+    baseCost: 175,
+    costGrowth: 90,
+    prerequisites: { constructionEngineering: 1, fieldEngineering: 1 },
+  },
 }
 
 export const technologyLabels: Record<TechnologyId, string> = Object.fromEntries(
@@ -372,6 +453,99 @@ const strategyPreparation: Record<StrategyDoctrine, number> = {
   concentrated: 1.08,
   defensive: 1.04,
   logistics: 1.02,
+}
+
+export const nationalStrategyLabels: Record<NationalStrategy, string> = {
+  balancedDevelopment: '균형 개발',
+  industrialPush: '산업 총동원',
+  railwayPriority: '철도망 우선',
+  mobileCommand: '기동 지휘',
+  fortifiedState: '요새화 방어',
+  researchInitiative: '연구 주도',
+}
+
+export const nationalStrategyDescriptions: Record<NationalStrategy, string> = {
+  balancedDevelopment: '경제·보급·군사에 별도 패널티 없는 균형형 국가 운영입니다.',
+  industrialPush: '민수 수익과 생산 속도를 높이는 대신 보급 회복이 소폭 감소합니다.',
+  railwayPriority: '철도 건설·철도 보급·철도 이동에 집중합니다.',
+  mobileCommand: '군단 준비도와 이동 속도를 높이는 대신 지역 방어가 소폭 낮아집니다.',
+  fortifiedState: '지역 방어와 참호화를 강화하지만 이동과 공세 준비가 느려집니다.',
+  researchInitiative: '연구점수 생산을 높이는 대신 현재 자금 수익이 소폭 감소합니다.',
+}
+
+const nationalIncome: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 1.12,
+  railwayPriority: 0.98,
+  mobileCommand: 0.97,
+  fortifiedState: 0.96,
+  researchInitiative: 0.93,
+}
+
+const nationalResearch: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 0.96,
+  railwayPriority: 1,
+  mobileCommand: 1,
+  fortifiedState: 0.98,
+  researchInitiative: 1.24,
+}
+
+const nationalMove: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 1.02,
+  railwayPriority: 0.96,
+  mobileCommand: 0.91,
+  fortifiedState: 1.08,
+  researchInitiative: 1.01,
+}
+
+const nationalDefense: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 0.98,
+  railwayPriority: 1,
+  mobileCommand: 0.96,
+  fortifiedState: 1.14,
+  researchInitiative: 0.99,
+}
+
+const nationalPlanning: Record<NationalStrategy, number> = {
+  balancedDevelopment: 1,
+  industrialPush: 0.98,
+  railwayPriority: 1.02,
+  mobileCommand: 1.12,
+  fortifiedState: 0.92,
+  researchInitiative: 1,
+}
+
+export function technologyEffectSummary(
+  technology: TechnologyId,
+  level: number,
+): string {
+  const next = level + 1
+  const summaries: Record<TechnologyId, string> = {
+    industrialMethods: `민수 수익 +${next * 8}% · 건설 시간 추가 단축`,
+    constructionEngineering: `비사단 건설 시간 -${next * 6.5}%`,
+    massProduction: `사단 편성 시간 -${next * 8}% · 회복 효율 증가`,
+    industrialAutomation: `민수 수익 +${next * 6}% · 사단 편성 시간 -${next * 3}%`,
+    regionalPlanning: `인프라 기반 건설 효율 +${next * 5}%`,
+    logisticsPlanning: `보급 회복 +${next * 0.3} · 고립 손실 완화`,
+    railOperations: `철도 보급 효과 +${next * 11}%p`,
+    supplyOptimization: `복합 보급 효율 +${next * 0.24}`,
+    networkScheduling: `철도 이동 시간 약 -${next * 4}% · 철도 보급 추가 강화`,
+    depotManagement: `물류센터 보급 회복 +${next * 0.22}`,
+    commandNetwork: `군단 준비도 축적 +${next * 0.45}/틱`,
+    operationalPlanning: `준비도 공세 보정 +${next * 2.5}%`,
+    staffCoordination: `군단 지휘 보정 +${next * 2}%`,
+    armyGroupCommand: `군단 준비도 +${next * 0.3}/틱 · 지휘 보정 +${next * 1.5}%`,
+    rapidRedeployment: `아군 지역 이동 시간 약 -${next * 4}%`,
+    fieldEngineering: `참호화 축적 +${next * 10}%`,
+    defensiveWorks: `지역 방어 효율 +${next * 5}%`,
+    mobilityEngineering: `기동 사단 이동 시간 약 -${next * 4}%`,
+    terrainAdaptation: `불리한 지형 이동/공세 패널티 약 ${next * 6}% 완화`,
+    civilEngineering: `철도·인프라·방어 공사 시간 -${next * 5}%`,
+  }
+  return summaries[technology]
 }
 
 export const TECHNOLOGY_IDS = Object.keys(
@@ -630,6 +804,7 @@ function createArmyGroup(
     objectiveId: null,
     planStatus: 'idle',
     strategy,
+    theater: null,
     preparation: 0,
     createdTick: state.tick,
   }
@@ -677,6 +852,32 @@ export function setArmyStrategy(
       },
     },
   }
+}
+
+export function setNationalStrategy(
+  state: GameState,
+  owner: PlayableFactionId,
+  strategy: NationalStrategy,
+): GameState {
+  if (owner !== 'player' && !activeAiFactions(state.aiCount).includes(owner as AiFactionId)) {
+    return state
+  }
+
+  const next: GameState = {
+    ...state,
+    nationalStrategies: {
+      ...state.nationalStrategies,
+      [owner]: strategy,
+    },
+  }
+
+  if (owner !== 'player') return next
+
+  return withEvent(
+    next,
+    'system',
+    `국가 전략 변경 · ${nationalStrategyLabels[strategy]}`,
+  )
 }
 
 export function renameArmy(
@@ -995,11 +1196,44 @@ function productionDurationForOwner(
     state.technologies[owner]?.constructionEngineering ?? 0
   const massProductionLevel =
     state.technologies[owner]?.massProduction ?? 0
-  const modifier =
+  const automationLevel =
+    state.technologies[owner]?.industrialAutomation ?? 0
+  const regionalPlanningLevel =
+    state.technologies[owner]?.regionalPlanning ?? 0
+  const civilEngineeringLevel =
+    state.technologies[owner]?.civilEngineering ?? 0
+  const nationalStrategy =
+    state.nationalStrategies[owner] ?? 'balancedDevelopment'
+
+  let modifier =
     kind === 'division'
-      ? 1 - industrialLevel * 0.035 - massProductionLevel * 0.08
-      : 1 - industrialLevel * 0.035 - constructionLevel * 0.065
-  return Math.max(4, Math.ceil(base * modifier))
+      ? 1 -
+        industrialLevel * 0.035 -
+        massProductionLevel * 0.08 -
+        automationLevel * 0.03
+      : 1 -
+        industrialLevel * 0.035 -
+        constructionLevel * 0.065 -
+        regionalPlanningLevel * 0.05
+
+  if (
+    kind === 'railway' ||
+    kind === 'infrastructure' ||
+    kind === 'defense'
+  ) {
+    modifier -= civilEngineeringLevel * 0.05
+  }
+
+  if (nationalStrategy === 'industrialPush') {
+    modifier -= 0.07
+  } else if (
+    nationalStrategy === 'railwayPriority' &&
+    kind === 'railway'
+  ) {
+    modifier -= 0.14
+  }
+
+  return Math.max(4, Math.ceil(base * Math.max(0.45, modifier)))
 }
 
 export function territoryMilitaryPower(
@@ -1037,7 +1271,13 @@ export function factionIncomePerCycle(
 
   const technologyLevel =
     state.technologies[owner]?.industrialMethods ?? 0
-  const modifier = 1 + technologyLevel * 0.08
+  const automationLevel =
+    state.technologies[owner]?.industrialAutomation ?? 0
+  const modifier =
+    (1 + technologyLevel * 0.08 + automationLevel * 0.06) *
+    nationalIncome[
+      state.nationalStrategies[owner] ?? 'balancedDevelopment'
+    ]
   const base =
     civilianIndustry * FACTORY_INCOME +
     Math.floor(urbanBonus * 1.5)
@@ -1057,7 +1297,13 @@ export function factionResearchPerCycle(
     }
   }
 
-  return facilities * 8
+  return Math.floor(
+    facilities *
+      8 *
+      nationalResearch[
+        state.nationalStrategies[owner] ?? 'balancedDevelopment'
+      ],
+  )
 }
 
 export function researchTechnology(
@@ -1196,6 +1442,12 @@ export function createInitialState(
       red: zeroTechnologyLevels(),
       blue: zeroTechnologyLevels(),
       green: zeroTechnologyLevels(),
+    },
+    nationalStrategies: {
+      player: 'balancedDevelopment',
+      red: 'balancedDevelopment',
+      blue: 'balancedDevelopment',
+      green: 'balancedDevelopment',
     },
     aiCount: 3,
     difficulty: 'normal',
@@ -1388,6 +1640,12 @@ export function startGame(state: GameState, startId: string): GameState {
       blue: zeroTechnologyLevels(),
       green: zeroTechnologyLevels(),
     },
+    nationalStrategies: {
+      player: state.nationalStrategies.player ?? 'balancedDevelopment',
+      red: 'balancedDevelopment',
+      blue: 'balancedDevelopment',
+      green: 'balancedDevelopment',
+    },
     productionQueue: [],
     battles: [],
     divisionUnits: {},
@@ -1515,6 +1773,114 @@ export function upgradeDefense(state: GameState, territoryId: string): GameState
 
 export function buildRailway(state: GameState, territoryId: string): GameState {
   return queueProduction(state, territoryId, 'railway')
+}
+
+function findFriendlyRoute(
+  state: GameState,
+  owner: PlayableFactionId,
+  startId: string,
+  endId: string,
+): string[] {
+  if (startId === endId) return [startId]
+  const start = state.territories[startId]
+  const end = state.territories[endId]
+  if (!start || !end || start.owner !== owner || end.owner !== owner) {
+    return []
+  }
+
+  const queue = [startId]
+  const previous = new Map<string, string | null>([[startId, null]])
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!
+    const current = state.territories[currentId]
+    if (!current) continue
+
+    for (const neighborId of current.neighbors) {
+      if (previous.has(neighborId)) continue
+      const neighbor = state.territories[neighborId]
+      if (!neighbor || neighbor.owner !== owner) continue
+
+      previous.set(neighborId, currentId)
+      if (neighborId === endId) {
+        const path: string[] = []
+        let cursor: string | null = endId
+        while (cursor) {
+          path.unshift(cursor)
+          if (cursor === startId) break
+          cursor = previous.get(cursor) ?? null
+        }
+        return path[0] === startId ? path : []
+      }
+      queue.push(neighborId)
+    }
+  }
+
+  return []
+}
+
+export function planRailwayRoute(
+  state: GameState,
+  startId: string,
+  endId: string,
+): GameState {
+  if (state.phase !== 'running') return state
+
+  const path = findFriendlyRoute(state, 'player', startId, endId)
+  if (path.length < 2) return state
+
+  let funds = state.funds.player
+  const added: ProductionOrder[] = []
+
+  for (const territoryId of path) {
+    const territory = state.territories[territoryId]
+    if (
+      !territory ||
+      territory.owner !== 'player' ||
+      territory.railway >= MAX_RAILWAY ||
+      hasProductionAt(state, 'player', territoryId) ||
+      added.some((order) => order.territoryId === territoryId)
+    ) {
+      continue
+    }
+
+    const cost = productionCost('railway', territory)
+    if (funds < cost) break
+
+    const duration = productionDurationForOwner(
+      state,
+      'railway',
+      territory,
+      'player',
+    )
+
+    added.push({
+      id: `player:${territoryId}:railway-route:${state.tick}:${added.length}`,
+      owner: 'player',
+      territoryId,
+      kind: 'railway',
+      cost,
+      totalTicks: duration,
+      remainingTicks: duration,
+      queuedTick: state.tick,
+    })
+    funds -= cost
+  }
+
+  if (added.length === 0) return state
+
+  return withEvent(
+    {
+      ...state,
+      funds: {
+        ...state.funds,
+        player: funds,
+      },
+      productionQueue: [...state.productionQueue, ...added],
+    },
+    'production',
+    `철도 노선 계획 · ${state.territories[startId].name} ↔ ${state.territories[endId].name} · ${added.length}개 구간 건설`,
+  )
 }
 
 export function cancelProduction(
@@ -1668,6 +2034,8 @@ function movementTicks(
   target: TerritoryState,
   role: DivisionRole = 'line',
   strategy: StrategyDoctrine = 'balanced',
+  state?: GameState,
+  owner?: PlayableFactionId,
 ): number {
   const supplyPenalty = Math.round((100 - source.supply) / 35)
   const distancePenalty = Math.min(
@@ -1683,17 +2051,55 @@ function movementTicks(
     1 - source.industry.logistics * 0.035,
   )
   const railLevel = Math.min(source.railway, target.railway)
-  const railwayModifier = Math.max(0.72, 1 - railLevel * 0.085)
+  const networkScheduling =
+    state && owner
+      ? state.technologies[owner]?.networkScheduling ?? 0
+      : 0
+  const mobilityEngineering =
+    state && owner
+      ? state.technologies[owner]?.mobilityEngineering ?? 0
+      : 0
+  const rapidRedeployment =
+    state && owner
+      ? state.technologies[owner]?.rapidRedeployment ?? 0
+      : 0
+  const terrainAdaptation =
+    state && owner
+      ? state.technologies[owner]?.terrainAdaptation ?? 0
+      : 0
+  const nationalStrategy =
+    state && owner
+      ? state.nationalStrategies[owner] ?? 'balancedDevelopment'
+      : 'balancedDevelopment'
+
+  const railwayModifier = Math.max(
+    0.62,
+    1 - railLevel * (0.085 + networkScheduling * 0.012),
+  )
+  const roleModifier =
+    roleMoveMultiplier[role] *
+    (role === 'mobile'
+      ? Math.max(0.8, 1 - mobilityEngineering * 0.04)
+      : 1)
+  const terrainBase = terrainMove[target.terrain]
+  const terrainModifier =
+    1 + (terrainBase - 1) * Math.max(0.55, 1 - terrainAdaptation * 0.06)
+  const redeployModifier =
+    source.owner === target.owner
+      ? Math.max(0.82, 1 - rapidRedeployment * 0.04)
+      : 1
 
   return clamp(
     Math.ceil(
       (2 + supplyPenalty + distancePenalty) *
-        roleMoveMultiplier[role] *
-        terrainMove[target.terrain] *
+        roleModifier *
+        terrainModifier *
         infrastructureModifier *
         logisticsModifier *
         railwayModifier *
-        strategyMove[strategy],
+        redeployModifier *
+        strategyMove[strategy] *
+        nationalMove[nationalStrategy],
     ),
     1,
     10,
@@ -1809,7 +2215,7 @@ export function issueDivisionOrder(
   const firstStep = state.territories[path[0]]
   if (!firstStep) return state
 
-  const totalTicks = movementTicks(source, firstStep, division.role, divisionStrategy(state, division))
+  const totalTicks = movementTicks(source, firstStep, division.role, divisionStrategy(state, division), state, division.owner)
   const orderType =
     target.owner === division.owner ? 'move' : 'attack'
 
@@ -1912,7 +2318,7 @@ function startDivisionBattle(
   const defenders = defenderIdsAt(state, targetId, target.owner)
 
   if (defenders.length === 0 && target.defense === 0) {
-    const totalTicks = movementTicks(source, target, division.role, divisionStrategy(state, division))
+    const totalTicks = movementTicks(source, target, division.role, divisionStrategy(state, division), state, division.owner)
     const nextDivision: DivisionUnit = {
       ...division,
       entrenchment: 0,
@@ -2154,7 +2560,7 @@ function processMovement(state: GameState): GameState {
         continue
       }
 
-      const legTicks = movementTicks(nextStep, following, division.role, divisionStrategy(state, division))
+      const legTicks = movementTicks(nextStep, following, division.role, divisionStrategy(state, division), state, division.owner)
       nextOrder = {
         ...order,
         path: remainingPath,
@@ -2259,10 +2665,13 @@ function armyCommandModifier(
 
   const staffLevel =
     state.technologies[division.owner]?.staffCoordination ?? 0
+  const armyGroupLevel =
+    state.technologies[division.owner]?.armyGroupCommand ?? 0
   const planningLevel =
     state.technologies[division.owner]?.operationalPlanning ?? 0
   const commanderBonus =
-    (army.commander.trim() ? 1.03 : 1) * (1 + staffLevel * 0.018)
+    (army.commander.trim() ? 1.03 : 1) *
+    (1 + staffLevel * 0.018 + armyGroupLevel * 0.015)
   const planningBonus = attacking
     ? 1 +
       clamp(army.preparation, 0, 100) / 600 +
@@ -2383,10 +2792,27 @@ function processBattles(state: GameState): GameState {
 
     const attackerLogisticsTech =
       next.technologies[battle.attacker]?.logisticsPlanning ?? 0
+    const attackerTerrainTech =
+      next.technologies[battle.attacker]?.terrainAdaptation ?? 0
     const defenderEngineeringTech =
       target.owner === 'neutral'
         ? 0
         : next.technologies[target.owner]?.fieldEngineering ?? 0
+    const defenderWorksTech =
+      target.owner === 'neutral'
+        ? 0
+        : next.technologies[target.owner]?.defensiveWorks ?? 0
+    const attackerNational =
+      next.nationalStrategies[battle.attacker] ?? 'balancedDevelopment'
+    const defenderNational =
+      target.owner === 'neutral'
+        ? 'balancedDevelopment'
+        : next.nationalStrategies[target.owner] ?? 'balancedDevelopment'
+    const baseTerrainAttack = terrainAttack[target.terrain]
+    const adaptedTerrainAttack =
+      1 -
+      (1 - baseTerrainAttack) *
+        Math.max(0.55, 1 - attackerTerrainTech * 0.06)
 
     const attackerPower =
       attackers.reduce(
@@ -2398,7 +2824,7 @@ function processBattles(state: GameState): GameState {
       ) *
       (0.62 + averageAttackerSupply / 210) *
       stancePower[battle.stance] *
-      terrainAttack[target.terrain] *
+      adaptedTerrainAttack *
       (1 + attackerLogisticsTech * 0.025)
 
     const defenderPower =
@@ -2410,15 +2836,22 @@ function processBattles(state: GameState): GameState {
         0,
       ) *
         (0.68 + target.supply / 220) +
-        target.defense * DEFENSE_POWER +
+        target.defense * DEFENSE_POWER * (1 + defenderWorksTech * 0.05) +
         (target.owner === 'neutral' ? 20 : 35)) *
       terrainDefense[target.terrain] *
-      (1 + defenderEngineeringTech * 0.045)
+      (1 + defenderEngineeringTech * 0.045) *
+      nationalDefense[defenderNational]
 
     const ratio = attackerPower / Math.max(45, defenderPower)
     const jitter =
       ((hashString(`${battle.id}:${next.tick}`) % 9) - 4) * 0.28
-    const delta = clamp((ratio - 1) * 11 + jitter, -11, 13)
+    const delta = clamp(
+      (ratio - 1) * 11 *
+        (attackerNational === 'mobileCommand' ? 1.04 : 1) +
+        jitter,
+      -11,
+      13,
+    )
     const progress = battle.progress + delta
 
     const attackerStrengthLoss = clamp(
@@ -2762,6 +3195,62 @@ function aiCorpsStrategy(
   return 'balanced'
 }
 
+function chooseAiNationalStrategy(
+  state: GameState,
+  owner: AiFactionId,
+): NationalStrategy {
+  const owned = Object.values(state.territories).filter(
+    (territory) => territory.owner === owner,
+  )
+  if (owned.length === 0) return 'balancedDevelopment'
+
+  const averageSupply =
+    owned.reduce((sum, territory) => sum + territory.supply, 0) /
+    owned.length
+  const frontlines = owned.filter((territory) =>
+    territory.neighbors.some(
+      (neighborId) => state.territories[neighborId]?.owner !== owner,
+    ),
+  ).length
+  const civilian = owned.reduce(
+    (sum, territory) => sum + territory.industry.civilian,
+    0,
+  )
+  const research = owned.reduce(
+    (sum, territory) => sum + territory.industry.research,
+    0,
+  )
+  const technologyScore = TECHNOLOGY_IDS.reduce(
+    (sum, technology) =>
+      sum + (state.technologies[owner][technology] ?? 0),
+    0,
+  )
+
+  if (averageSupply < 56) return 'railwayPriority'
+  if (frontlines >= Math.max(3, Math.ceil(owned.length * 0.45))) {
+    return state.difficulty === 'hard'
+      ? 'mobileCommand'
+      : 'fortifiedState'
+  }
+  if (civilian < Math.max(2, Math.ceil(owned.length / 5))) {
+    return 'industrialPush'
+  }
+  if (research > 0 && technologyScore < 14) {
+    return 'researchInitiative'
+  }
+
+  const variants: NationalStrategy[] = [
+    'balancedDevelopment',
+    'industrialPush',
+    'railwayPriority',
+    'mobileCommand',
+  ]
+  return variants[
+    hashString(`${owner}:${Math.floor(state.tick / 25)}`) %
+      variants.length
+  ]
+}
+
 function maintainAiCorps(
   state: GameState,
   owner: AiFactionId,
@@ -2775,9 +3264,52 @@ function maintainAiCorps(
     )
   if (divisions.length === 0) return state
 
+  const frontTerritories = Object.values(state.territories)
+    .filter(
+      (territory) =>
+        territory.owner === owner &&
+        territory.neighbors.some(
+          (neighborId) =>
+            state.territories[neighborId]?.owner !== owner,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        b.neighbors.filter(
+          (neighborId) =>
+            state.territories[neighborId]?.owner !== owner,
+        ).length -
+          a.neighbors.filter(
+            (neighborId) =>
+              state.territories[neighborId]?.owner !== owner,
+          ).length ||
+        a.id.localeCompare(b.id),
+    )
+
+  const theaterNames = [
+    ...new Set(
+      frontTerritories.map(
+        (territory) => territory.sidoName || territory.sggName || '전선',
+      ),
+    ),
+  ]
+
   const cap =
-    state.difficulty === 'easy' ? 2 : state.difficulty === 'hard' ? 8 : 6
-  const desired = Math.min(cap, Math.max(1, Math.ceil(divisions.length / 3)))
+    state.difficulty === 'easy'
+      ? 4
+      : state.difficulty === 'hard'
+        ? 14
+        : 10
+  const desired = Math.min(
+    cap,
+    divisions.length,
+    Math.max(
+      2,
+      theaterNames.length,
+      Math.ceil(divisions.length / 2),
+    ),
+  )
+
   let next = state
 
   while (armiesForOwner(next, owner).length < desired) {
@@ -2791,17 +3323,61 @@ function maintainAiCorps(
     next = created.state
   }
 
-  const corps = armiesForOwner(next, owner)
+  const corps = armiesForOwner(next, owner).slice(0, desired)
   if (corps.length === 0) return next
 
-  const hostileTargets = Object.values(next.territories)
-    .filter(
-      (territory) =>
-        territory.owner === owner &&
-        territory.neighbors.some(
-          (neighborId) => next.territories[neighborId]?.owner !== owner,
-        ),
+  const armies = { ...next.armies }
+  const divisionUnits = { ...next.divisionUnits }
+
+  corps.forEach((army, index) => {
+    armies[army.id] = {
+      ...army,
+      divisionIds: [],
+      theater:
+        theaterNames.length > 0
+          ? theaterNames[index % theaterNames.length]
+          : '예비 전구',
+      strategy: aiCorpsStrategy(next, owner, index + 1),
+    }
+  })
+
+  for (const division of divisions) {
+    const territory = next.territories[division.locationId]
+    const region =
+      territory?.sidoName || territory?.sggName || '예비 전구'
+
+    const regional = corps.filter(
+      (army) => armies[army.id].theater === region,
     )
+    const pool = regional.length > 0 ? regional : corps
+
+    const existing = division.armyId
+      ? pool.find((army) => army.id === division.armyId)
+      : null
+
+    const chosen =
+      existing ??
+      [...pool].sort(
+        (a, b) =>
+          armies[a.id].divisionIds.length -
+            armies[b.id].divisionIds.length ||
+          a.id.localeCompare(b.id),
+      )[0]
+
+    armies[chosen.id] = {
+      ...armies[chosen.id],
+      divisionIds: [
+        ...armies[chosen.id].divisionIds,
+        division.id,
+      ],
+    }
+    divisionUnits[division.id] = {
+      ...division,
+      armyId: chosen.id,
+    }
+  }
+
+  const allHostileTargets = frontTerritories
     .flatMap((territory) =>
       territory.neighbors
         .map((neighborId) => next.territories[neighborId])
@@ -2812,50 +3388,66 @@ function maintainAiCorps(
     )
     .filter(
       (target, index, values) =>
-        values.findIndex((candidate) => candidate.id === target.id) === index,
+        values.findIndex((candidate) => candidate.id === target.id) ===
+        index,
     )
-    .sort(
+
+  corps.forEach((army) => {
+    const current = armies[army.id]
+    const assigned = current.divisionIds
+      .map((divisionId) => divisionUnits[divisionId])
+      .filter((division): division is DivisionUnit =>
+        Boolean(division),
+      )
+
+    const localTargets = assigned
+      .flatMap((division) => {
+        const location = next.territories[division.locationId]
+        return (
+          location?.neighbors
+            .map((neighborId) => next.territories[neighborId])
+            .filter(
+              (target): target is TerritoryState =>
+                Boolean(target && target.owner !== owner),
+            ) ?? []
+        )
+      })
+      .filter(
+        (target, index, values) =>
+          values.findIndex(
+            (candidate) => candidate.id === target.id,
+          ) === index,
+      )
+
+    const theaterTargets = allHostileTargets.filter(
+      (target) =>
+        target.sidoName === current.theater ||
+        target.neighbors.some(
+          (neighborId) =>
+            next.territories[neighborId]?.sidoName === current.theater,
+        ),
+    )
+
+    const target = [
+      ...(localTargets.length > 0
+        ? localTargets
+        : theaterTargets.length > 0
+          ? theaterTargets
+          : allHostileTargets),
+    ].sort(
       (a, b) =>
         territoryMilitaryPower(a, next) -
           territoryMilitaryPower(b, next) ||
+        b.supply - a.supply ||
         a.id.localeCompare(b.id),
+    )[0]
+
+    const active = assigned.some(
+      (division) => division.status !== 'idle',
     )
 
-  const armies = { ...next.armies }
-  const divisionUnits = { ...next.divisionUnits }
-
-  for (const army of corps) {
     armies[army.id] = {
-      ...army,
-      divisionIds: [],
-    }
-  }
-
-  divisions.forEach((division, index) => {
-    const army = corps[index % corps.length]
-    armies[army.id] = {
-      ...armies[army.id],
-      divisionIds: [...armies[army.id].divisionIds, division.id],
-    }
-    divisionUnits[division.id] = {
-      ...division,
-      armyId: army.id,
-    }
-  })
-
-  corps.forEach((army, index) => {
-    const assigned = armies[army.id].divisionIds
-      .map((divisionId) => divisionUnits[divisionId])
-      .filter((division): division is DivisionUnit => Boolean(division))
-    const active = assigned.some((division) => division.status !== 'idle')
-    const target =
-      hostileTargets.length > 0
-        ? hostileTargets[index % hostileTargets.length]
-        : null
-
-    armies[army.id] = {
-      ...armies[army.id],
-      strategy: aiCorpsStrategy(next, owner, index + 1),
+      ...current,
       objectiveId: target?.id ?? null,
       planStatus: target
         ? active
@@ -2940,7 +3532,7 @@ function aiIssueOrders(state: GameState, owner: AiFactionId): GameState {
       )
 
     if (friendlyFront) {
-      const totalTicks = movementTicks(territory, friendlyFront, current.role, divisionStrategy(next, current))
+      const totalTicks = movementTicks(territory, friendlyFront, current.role, divisionStrategy(next, current), next, current.owner)
       next = setDivision(next, {
         ...current,
         status: 'moving',
@@ -3034,18 +3626,23 @@ function recoverDivisions(state: GameState): GameState {
     const militaryCapacity = territory.industry.military
     const massProductionLevel =
       state.technologies[division.owner]?.massProduction ?? 0
+    const automationLevel =
+      state.technologies[division.owner]?.industrialAutomation ?? 0
     const strength = Math.min(
       100,
       division.strength +
         (territory.supply >= 70 ? 0.25 : 0.05) +
         militaryCapacity * 0.08 +
-        massProductionLevel * 0.07,
+        massProductionLevel * 0.07 +
+        automationLevel * 0.04,
     )
     const engineeringLevel =
       state.technologies[division.owner]?.fieldEngineering ?? 0
     const defensiveWorksLevel =
       state.technologies[division.owner]?.defensiveWorks ?? 0
     const armyStrategy = divisionStrategy(state, division)
+    const nationalStrategy =
+      state.nationalStrategies[division.owner] ?? 'balancedDevelopment'
     const entrenchGain =
       (division.role === 'guard'
         ? 4
@@ -3053,7 +3650,8 @@ function recoverDivisions(state: GameState): GameState {
           ? 1.8
           : 3) *
       (1 + engineeringLevel * 0.1 + defensiveWorksLevel * 0.06) *
-      (armyStrategy === 'defensive' ? 1.12 : 1)
+      (armyStrategy === 'defensive' ? 1.12 : 1) *
+      (nationalStrategy === 'fortifiedState' ? 1.18 : 1)
     const entrenchment = Math.min(
       100,
       division.entrenchment + entrenchGain,
@@ -3122,14 +3720,20 @@ function processArmyPlanning(state: GameState): GameState {
         state.technologies[army.owner]?.commandNetwork ?? 0
       const planningLevel =
         state.technologies[army.owner]?.operationalPlanning ?? 0
+      const armyGroupLevel =
+        state.technologies[army.owner]?.armyGroupCommand ?? 0
+      const nationalStrategy =
+        state.nationalStrategies[army.owner] ?? 'balancedDevelopment'
       preparation = Math.min(
         100,
         preparation +
           (1.2 +
             readiness * 1.8 +
             commandLevel * 0.45 +
-            planningLevel * 0.28) *
-            strategyPreparation[army.strategy],
+            planningLevel * 0.28 +
+            armyGroupLevel * 0.3) *
+            strategyPreparation[army.strategy] *
+            nationalPlanning[nationalStrategy],
       )
     } else if (planStatus === 'executing') {
       preparation = Math.max(0, preparation - 1.5)
@@ -3211,6 +3815,11 @@ function applyIncome(state: GameState): GameState {
   }
 
   for (const owner of activeAiFactions(state.aiCount)) {
+    next = setNationalStrategy(
+      next,
+      owner,
+      chooseAiNationalStrategy(next, owner),
+    )
     next = maybeAiResearch(next, owner)
     next = aiBuild(next, owner)
   }
@@ -3272,6 +3881,12 @@ export function advanceTick(state: GameState): GameState {
         state.technologies[owner]?.railOperations ?? 0
       const supplyOptimizationLevel =
         state.technologies[owner]?.supplyOptimization ?? 0
+      const networkSchedulingLevel =
+        state.technologies[owner]?.networkScheduling ?? 0
+      const depotManagementLevel =
+        state.technologies[owner]?.depotManagement ?? 0
+      const nationalStrategy =
+        state.nationalStrategies[owner] ?? 'balancedDevelopment'
       const railwayConnected =
         territory.railway > 0 &&
         territory.neighbors.some((neighborId) => {
@@ -3282,7 +3897,11 @@ export function advanceTick(state: GameState): GameState {
           )
         })
       const railwayBonus = railwayConnected
-        ? territory.railway * (0.34 + railOperationsLevel * 0.11)
+        ? territory.railway *
+          (0.34 +
+            railOperationsLevel * 0.11 +
+            networkSchedulingLevel * 0.07) *
+          (nationalStrategy === 'railwayPriority' ? 1.28 : 1)
         : 0
 
       const supplyDelta = connected
@@ -3291,6 +3910,7 @@ export function advanceTick(state: GameState): GameState {
             infrastructureLevel * 0.28 +
             technologyLevel * 0.3 +
             supplyOptimizationLevel * 0.24 +
+            depotManagementLevel * 0.22 +
             railwayBonus) *
           terrainSupply[territory.terrain]
         : -Math.max(
@@ -3300,7 +3920,11 @@ export function advanceTick(state: GameState): GameState {
               infrastructureLevel * 0.18 -
               technologyLevel * 0.16 -
               supplyOptimizationLevel * 0.2 -
-              (territory.railway > 0 ? railOperationsLevel * 0.1 : 0)) /
+              depotManagementLevel * 0.14 -
+              (territory.railway > 0
+                ? railOperationsLevel * 0.1 +
+                  networkSchedulingLevel * 0.06
+                : 0)) /
               Math.max(0.65, terrainSupply[territory.terrain]),
           )
 
