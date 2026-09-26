@@ -1408,19 +1408,21 @@ function App() {
               <div>
                 <span>자금</span>
                 <strong>{game.funds.player.toLocaleString()}</strong>
+                <small>+{nationalStats.income}/{ECONOMY_INTERVAL}T</small>
               </div>
               <div>
                 <span>산업</span>
-                <strong>{nationalStats.playerFactories}</strong>
-                <small>+{nationalStats.income}/{ECONOMY_INTERVAL}T</small>
+                <strong>{nationalStats.playerIndustryTotal}</strong>
+                <small>민 {nationalStats.industry.civilian} · 군 {nationalStats.industry.military}</small>
+              </div>
+              <div>
+                <span>연구</span>
+                <strong>{game.researchPoints.player.toLocaleString()}</strong>
+                <small>+{nationalStats.researchIncome}/{ECONOMY_INTERVAL}T</small>
               </div>
               <div>
                 <span>사단</span>
                 <strong>{nationalStats.playerDivisions}</strong>
-              </div>
-              <div>
-                <span>생산</span>
-                <strong>{playerQueue.length}</strong>
               </div>
               <div>
                 <span>군</span>
@@ -2121,11 +2123,19 @@ function App() {
 
         {game && mapMode !== 'control' && (
           <div className="map-mode-legend">
-            <strong>{mapMode === 'supply' ? '보급 지도' : '산업 지도'}</strong>
+            <strong>
+              {mapMode === 'supply'
+                ? '보급 지도'
+                : mapMode === 'industry'
+                  ? '산업 지도'
+                  : '근사 지형 지도'}
+            </strong>
             <span>
               {mapMode === 'supply'
                 ? '초록 = 안정 · 황색 = 주의 · 적갈색 = 취약'
-                : '밝을수록 산업 시설이 많음'}
+                : mapMode === 'industry'
+                  ? '밝을수록 산업·인프라 시설 총량이 많음'
+                  : '도시·평야·구릉·산악·산림·해안·도서의 게임용 근사 분류'}
             </span>
           </div>
         )}
@@ -2154,6 +2164,13 @@ function App() {
             {playerQueue.length > 0 && <b>{playerQueue.length}</b>}
           </button>
           <button
+            className={researchOpen ? 'active' : ''}
+            disabled={game?.phase !== 'running'}
+            onClick={() => setResearchOpen((open) => !open)}
+          >
+            연구
+          </button>
+          <button
             className={frontOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setFrontOpen((open) => !open)}
@@ -2176,11 +2193,20 @@ function App() {
                   ? 'supply'
                   : mode === 'supply'
                     ? 'industry'
-                    : 'control',
+                    : mode === 'industry'
+                      ? 'terrain'
+                      : 'control',
               )
             }
           >
-            지도 {mapMode === 'control' ? '영토' : mapMode === 'supply' ? '보급' : '산업'}
+            지도{' '}
+            {mapMode === 'control'
+              ? '영토'
+              : mapMode === 'supply'
+                ? '보급'
+                : mapMode === 'industry'
+                  ? '산업'
+                  : '지형'}
           </button>
           <button
             className={rulesOpen ? 'active' : ''}
