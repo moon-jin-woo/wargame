@@ -2574,3 +2574,234 @@ body {
     text-align: left;
   }
 }
+
+
+/* Army HQ overhaul */
+.army-hq-section {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(186, 169, 126, 0.18);
+}
+
+.army-hq-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.army-hq-title > div {
+  display: grid;
+  gap: 2px;
+}
+
+.army-hq-title span {
+  color: #8e9188;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.army-hq-title strong {
+  color: #e6e1d3;
+  font-size: 11px;
+}
+
+.army-hq-title button,
+.army-plan-actions button {
+  padding: 7px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.26);
+  border-radius: 3px;
+  background: #171a18;
+  color: #b9b7ac;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.army-hq-title button:hover,
+.army-plan-actions button:hover:not(:disabled) {
+  border-color: var(--ops-border-strong);
+  color: var(--ops-brass);
+}
+
+.army-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.army-tabs > button {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid rgba(186, 169, 126, 0.16);
+  border-radius: 3px;
+  background: rgba(12, 14, 14, 0.5);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.army-tabs > button.selected {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.1);
+}
+
+.army-tabs strong,
+.army-tabs span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.army-tabs strong {
+  color: #dfdbce;
+  font-size: 9px;
+}
+
+.army-tabs span {
+  color: #858880;
+  font-size: 8px;
+}
+
+.army-inspector {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(186, 169, 126, 0.2);
+  border-radius: 3px;
+  background: rgba(10, 12, 12, 0.58);
+}
+
+.army-edit-grid,
+.division-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.army-edit-grid label,
+.division-command-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.army-edit-grid span,
+.division-command-grid span {
+  color: #858880;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.army-edit-grid input,
+.division-command-grid select {
+  min-width: 0;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(186, 169, 126, 0.2);
+  border-radius: 3px;
+  outline: none;
+  background: #101312;
+  color: #dfdbcf;
+  font-size: 9px;
+}
+
+.army-plan-card {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(186, 169, 126, 0.14);
+}
+
+.army-plan-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.army-plan-meta > div {
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid rgba(186, 169, 126, 0.12);
+  background: rgba(24, 26, 24, 0.6);
+}
+
+.army-plan-meta span,
+.army-plan-meta strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.army-plan-meta span {
+  color: #81847d;
+  font-size: 7px;
+}
+
+.army-plan-meta strong {
+  margin-top: 2px;
+  color: #ddd8ca;
+  font-size: 9px;
+}
+
+.army-preparation-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: #30332f;
+}
+
+.army-preparation-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #766846, #c2a969);
+}
+
+.army-plan-actions {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 5px;
+}
+
+.army-plan-actions button.active {
+  border-color: #d0b46e;
+  background: rgba(199, 170, 104, 0.14);
+  color: #e7d398;
+}
+
+.army-plan-actions button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.army-plan-card > small {
+  color: #7f827b;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.division-stat-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 620px) {
+  .army-tabs,
+  .army-edit-grid,
+  .division-command-grid,
+  .army-plan-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .army-plan-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .division-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
