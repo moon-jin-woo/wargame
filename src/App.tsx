@@ -143,6 +143,7 @@ function App() {
   const [productionOpen, setProductionOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
+  const [objectiveMode, setObjectiveMode] = useState(false)
   const [mapMode, setMapMode] = useState<MapMode>('control')
 
   useEffect(() => {
@@ -1118,6 +1119,22 @@ function App() {
     setGame((previous) => {
       if (!previous || !previous.territories[targetId]) return previous
 
+      if (
+        objectiveMode &&
+        previous.selectedArmyId &&
+        previous.armies[previous.selectedArmyId]?.owner === 'player'
+      ) {
+        const next = setArmyObjective(
+          previous,
+          previous.selectedArmyId,
+          targetId,
+        )
+        return {
+          ...next,
+          selectedId: targetId,
+        }
+      }
+
       const divisionId = previous.selectedDivisionId
       const division = divisionId
         ? previous.divisionUnits[divisionId]
@@ -1147,6 +1164,10 @@ function App() {
 
       return { ...previous, selectedId: targetId }
     })
+
+    if (objectiveMode) {
+      setObjectiveMode(false)
+    }
   }
 
   const selectDivision = (divisionId: string) => {
@@ -1174,6 +1195,27 @@ function App() {
         duration: 420,
       })
     }
+  }
+
+  const selectArmy = (armyId: string) => {
+    setGame((previous) => {
+      if (!previous) return previous
+      const army = previous.armies[armyId]
+      if (!army || army.owner !== 'player') return previous
+
+      const leadDivision = army.divisionIds
+        .map((id) => previous.divisionUnits[id])
+        .find(Boolean)
+
+      return {
+        ...previous,
+        selectedArmyId: army.id,
+        selectedDivisionId:
+          leadDivision?.id ?? previous.selectedDivisionId,
+        selectedId:
+          leadDivision?.locationId ?? previous.selectedId,
+      }
+    })
   }
 
   const focusSelected = () => {
@@ -1617,6 +1659,60 @@ function App() {
                   />
                 </label>
 
+                <div className="division-command-grid">
+                  <label>
+                    <span>사단 역할</span>
+                    <select
+                      value={selectedDivision.role}
+                      disabled={selectedDivision.status !== 'idle'}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? setDivisionRole(
+                                previous,
+                                selectedDivision.id,
+                                event.target.value as DivisionRole,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      {(['line', 'mobile', 'guard'] as DivisionRole[]).map(
+                        (role) => (
+                          <option key={role} value={role}>
+                            {divisionRoleLabels[role]}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>배속 군</span>
+                    <select
+                      value={selectedDivision.armyId ?? ''}
+                      onChange={(event) =>
+                        setGame((previous) =>
+                          previous
+                            ? assignDivisionToArmy(
+                                previous,
+                                selectedDivision.id,
+                                event.target.value || null,
+                              )
+                            : previous,
+                        )
+                      }
+                    >
+                      <option value="">미배속</option>
+                      {playerArmyList.map((army) => (
+                        <option key={army.id} value={army.id}>
+                          {army.name || '이름 없는 군'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
                 <div className="division-stat-grid">
                   <div>
                     <span>전투력</span>
@@ -1637,6 +1733,13 @@ function App() {
                     <strong>{Math.round(selectedDivision.experience)}%</strong>
                     <i>
                       <b style={{ width: `${selectedDivision.experience}%` }} />
+                    </i>
+                  </div>
+                  <div>
+                    <span>참호화</span>
+                    <strong>{Math.round(selectedDivision.entrenchment)}%</strong>
+                    <i>
+                      <b style={{ width: `${selectedDivision.entrenchment}%` }} />
                     </i>
                   </div>
                 </div>
