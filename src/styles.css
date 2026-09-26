@@ -2488,3 +2488,48 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.territory-unit-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(186, 169, 126, 0.14);
+}
+
+.territory-unit-list {
+  display: grid;
+  gap: 5px;
+}
+
+.territory-unit-list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid rgba(186, 169, 126, 0.16);
+  border-radius: 3px;
+  background: rgba(11, 13, 13, 0.48);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.territory-unit-list button.selected {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.1);
+}
+
+.territory-unit-list button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.territory-unit-list strong {
+  color: #ddd8ca;
+  font-size: 9px;
+}
+
+.territory-unit-list span {
+  color: #858780;
+  font-size: 8px;
+}
