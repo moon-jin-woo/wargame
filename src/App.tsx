@@ -1638,6 +1638,9 @@ function App() {
   const handleNewGame = () => {
     if (!adminData) return
     const next = createInitialState(adminData.territories, adminData.version)
+    setBeginnerOpen(true)
+    setArmyOpen(false)
+    setHqFaction('player')
     setGame((previous) => ({
       ...next,
       playerName: previous?.playerName ?? next.playerName,
@@ -2580,6 +2583,24 @@ function App() {
                         ? ` · 현재 구간 ${selectedDivision.order.remainingTicks}틱`
                         : ''}
                     </small>
+                    {selectedMovement && selectedDivision.status === 'moving' && (
+                      <div className="division-movement-progress">
+                        <div>
+                          <span>
+                            {selectedMovement.current?.name ?? '?'} →{' '}
+                            {selectedMovement.next?.name ?? '?'}
+                          </span>
+                          <strong>{selectedMovement.progress}%</strong>
+                        </div>
+                        <i>
+                          <b
+                            style={{
+                              width: `${selectedMovement.progress}%`,
+                            }}
+                          />
+                        </i>
+                      </div>
+                    )}
                     <button
                       onClick={() =>
                         setGame((previous) =>
@@ -2688,6 +2709,74 @@ function App() {
               Space = 정지/재개 · 1/2/4 = 배속 · 0 = ×10 · F = 선택 지역 확대
             </p>
           </section>
+        )}
+
+        {game?.phase === 'running' && beginnerOpen && beginnerStep && (
+          <section className={`beginner-coach step-${beginnerStep.step}`}>
+            <div className="beginner-coach-step">
+              <span>초보 지휘 안내 · STEP {beginnerStep.step}</span>
+              <strong>{beginnerStep.title}</strong>
+              <small>{beginnerStep.detail}</small>
+              {selectedMovement && selectedDivision?.status === 'moving' && (
+                <div className="beginner-move-progress">
+                  <div>
+                    <span>현재 구간 진행</span>
+                    <b>{selectedMovement.progress}%</b>
+                  </div>
+                  <i>
+                    <b style={{ width: `${selectedMovement.progress}%` }} />
+                  </i>
+                  <small>
+                    {selectedMovement.current?.name ?? '?'} →{' '}
+                    {selectedMovement.next?.name ?? '?'} · 이후{' '}
+                    {Math.max(0, selectedMovement.remainingLegs - 1)}구간
+                  </small>
+                </div>
+              )}
+            </div>
+            <div className="beginner-shortcuts">
+              <button
+                onClick={() => {
+                  setHqFaction('player')
+                  setArmyOpen(true)
+                }}
+              >
+                사단·군단
+                <small>이동/전략</small>
+              </button>
+              <button onClick={() => setProductionOpen(true)}>
+                생산
+                <small>산업/철도</small>
+              </button>
+              <button onClick={() => setResearchOpen(true)}>
+                연구
+                <small>테크트리</small>
+              </button>
+              <button onClick={() => setFrontOpen(true)}>
+                전선
+                <small>전투 확인</small>
+              </button>
+              <button onClick={() => setRulesOpen(true)}>
+                전체 기능
+                <small>규칙 보기</small>
+              </button>
+              <button
+                className="beginner-hide"
+                onClick={() => setBeginnerOpen(false)}
+              >
+                안내 숨기기
+              </button>
+            </div>
+          </section>
+        )}
+
+        {game?.phase === 'running' && !beginnerOpen && (
+          <button
+            className="beginner-tab"
+            onClick={() => setBeginnerOpen(true)}
+          >
+            ? 플레이 가이드
+          </button>
         )}
 
         {game && counts && game.phase !== 'setup' && total > 0 && (
@@ -3112,6 +3201,9 @@ function App() {
                 )
                 setCommandOpen(false)
                 setRulesOpen(false)
+                setBeginnerOpen(true)
+                setHqFaction('player')
+                setArmyOpen(true)
               }}
             >
               {selected ? `${selected.name}에서 시작` : '시작 지역 선택'}
