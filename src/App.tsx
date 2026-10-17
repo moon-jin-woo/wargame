@@ -92,6 +92,7 @@ const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
 const DIVISION_ROUTE_SOURCE_ID = 'division-route'
 const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
+const DIVISION_ROUTE_ARROW_LAYER_ID = 'division-route-arrow'
 const DIVISION_ROUTE_WAYPOINT_LAYER_ID = 'division-route-waypoint'
 const DIVISION_ROUTE_TARGET_LAYER_ID = 'division-route-target'
 const DIVISION_ROUTE_TARGET_LABEL_LAYER_ID = 'division-route-target-label'
@@ -390,6 +391,28 @@ function App() {
         'line-width': 2.8,
         'line-opacity': 0.95,
         'line-dasharray': [2, 1.35],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_ARROW_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'route'],
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 72,
+        'text-field': '›',
+        'text-size': 18,
+        'text-rotation-alignment': 'map',
+        'text-keep-upright': false,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f3dda2',
+        'text-halo-color': '#171918',
+        'text-halo-width': 1,
       },
     })
 
@@ -1277,6 +1300,37 @@ function App() {
     }
 
     const finalTarget = path[path.length - 1]
+    const firstStep = path[0]
+    const routeStart: [number, number] =
+      selectedDivision.status === 'moving' &&
+      selectedDivision.order.totalTicks > 0 &&
+      firstStep
+        ? [
+            current.centroid[0] +
+              (firstStep.centroid[0] - current.centroid[0]) *
+                Math.max(
+                  0,
+                  Math.min(
+                    0.98,
+                    1 -
+                      selectedDivision.order.remainingTicks /
+                        selectedDivision.order.totalTicks,
+                  ),
+                ),
+            current.centroid[1] +
+              (firstStep.centroid[1] - current.centroid[1]) *
+                Math.max(
+                  0,
+                  Math.min(
+                    0.98,
+                    1 -
+                      selectedDivision.order.remainingTicks /
+                        selectedDivision.order.totalTicks,
+                  ),
+                ),
+          ]
+        : current.centroid
+
     const routeFeatures = [
       {
         type: 'Feature' as const,
@@ -1284,7 +1338,7 @@ function App() {
         geometry: {
           type: 'LineString' as const,
           coordinates: [
-            current.centroid,
+            routeStart,
             ...path.map((territory) => territory.centroid),
           ],
         },
