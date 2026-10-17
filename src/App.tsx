@@ -92,9 +92,14 @@ const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
 const DIVISION_ROUTE_SOURCE_ID = 'division-route'
 const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
+const DIVISION_ROUTE_ARROW_LAYER_ID = 'division-route-arrow'
+const DIVISION_ROUTE_WAYPOINT_LAYER_ID = 'division-route-waypoint'
+const DIVISION_ROUTE_TARGET_LAYER_ID = 'division-route-target'
+const DIVISION_ROUTE_TARGET_LABEL_LAYER_ID = 'division-route-target-label'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
+const DIVISION_PROGRESS_LABEL_LAYER_ID = 'division-progress-label'
 const RAILWAY_SOURCE_ID = 'railway-network'
 const RAILWAY_LAYER_ID = 'railway-network-line'
 type MapMode = 'control' | 'supply' | 'industry' | 'terrain' | 'railway'
@@ -227,6 +232,7 @@ function App() {
   const [researchOpen, setResearchOpen] = useState(false)
   const [frontOpen, setFrontOpen] = useState(false)
   const [armyOpen, setArmyOpen] = useState(false)
+  const [beginnerOpen, setBeginnerOpen] = useState(true)
   const [hqFaction, setHqFaction] = useState<PlayableFactionId>('player')
   const [railwayRouteStart, setRailwayRouteStart] = useState<string | null>(null)
   const [objectiveMode, setObjectiveMode] = useState(false)
@@ -379,11 +385,80 @@ function App() {
       id: DIVISION_ROUTE_LAYER_ID,
       type: 'line',
       source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'route'],
       paint: {
         'line-color': '#f0d48a',
-        'line-width': 2.4,
-        'line-opacity': 0.9,
-        'line-dasharray': [2, 1.5],
+        'line-width': 2.8,
+        'line-opacity': 0.95,
+        'line-dasharray': [2, 1.35],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_ARROW_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'route'],
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 72,
+        'text-field': '›',
+        'text-size': 18,
+        'text-rotation-alignment': 'map',
+        'text-keep-upright': false,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f3dda2',
+        'text-halo-color': '#171918',
+        'text-halo-width': 1,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_WAYPOINT_LAYER_ID,
+      type: 'circle',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'waypoint'],
+      paint: {
+        'circle-radius': 4,
+        'circle-color': '#f0d48a',
+        'circle-opacity': 0.92,
+        'circle-stroke-color': '#22231f',
+        'circle-stroke-width': 1.5,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_TARGET_LAYER_ID,
+      type: 'circle',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'target'],
+      paint: {
+        'circle-radius': 9,
+        'circle-color': 'rgba(240, 212, 138, 0.12)',
+        'circle-stroke-color': '#f0d48a',
+        'circle-stroke-width': 2.5,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_TARGET_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'target'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 10,
+        'text-offset': [0, 1.55],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f4e4b6',
+        'text-halo-color': '#171918',
+        'text-halo-width': 1.4,
       },
     })
 
@@ -488,6 +563,25 @@ function App() {
         'text-color': '#f6f2e6',
         'text-halo-color': '#161818',
         'text-halo-width': 1.1,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_PROGRESS_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_SOURCE_ID,
+      filter: ['==', ['get', 'moving'], true],
+      layout: {
+        'text-field': ['concat', '이동 ', ['to-string', ['get', 'progress']], '%'],
+        'text-size': 9,
+        'text-offset': [0, 2.25],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f0d48a',
+        'text-halo-color': '#171918',
+        'text-halo-width': 1.25,
       },
     })
 
@@ -883,10 +977,50 @@ function App() {
         ids: string[]
         moving: number
         fighting: number
+        coordinates: [number, number]
+        movementProgress: number
       }
     >()
 
     for (const division of Object.values(game.divisionUnits)) {
+      const territory = game.territories[division.locationId]
+      if (!territory) continue
+
+      const nextTerritory =
+        division.status === 'moving' && division.order?.path[0]
+          ? game.territories[division.order.path[0]]
+          : null
+
+      if (nextTerritory && division.order) {
+        const totalTicks = Math.max(1, division.order.totalTicks)
+        const movementProgress = Math.max(
+          0,
+          Math.min(
+            0.98,
+            1 - division.order.remainingTicks / totalTicks,
+          ),
+        )
+        const coordinates: [number, number] = [
+          territory.centroid[0] +
+            (nextTerritory.centroid[0] - territory.centroid[0]) *
+              movementProgress,
+          territory.centroid[1] +
+            (nextTerritory.centroid[1] - territory.centroid[1]) *
+              movementProgress,
+        ]
+        grouped.set(`moving:${division.id}`, {
+          key: `moving:${division.id}`,
+          territoryId: division.locationId,
+          owner: division.owner,
+          ids: [division.id],
+          moving: 1,
+          fighting: 0,
+          coordinates,
+          movementProgress,
+        })
+        continue
+      }
+
       const key = `${division.locationId}:${division.owner}`
       const current = grouped.get(key) ?? {
         key,
@@ -895,10 +1029,11 @@ function App() {
         ids: [],
         moving: 0,
         fighting: 0,
+        coordinates: territory.centroid,
+        movementProgress: 0,
       }
 
       current.ids.push(division.id)
-      if (division.status === 'moving') current.moving += 1
       if (
         division.status === 'attacking' ||
         division.status === 'defending'
@@ -911,7 +1046,7 @@ function App() {
     return [...grouped.values()].sort((a, b) =>
       a.key.localeCompare(b.key),
     )
-  }, [game?.divisionUnits])
+  }, [game?.divisionUnits, game?.territories])
 
   const divisionStackSignature = useMemo(
     () =>
@@ -920,7 +1055,7 @@ function App() {
           (stack) =>
             `${stack.key}:${stack.ids
               .map((id) => `${id}:${game?.divisionUnits[id]?.role ?? 'line'}`)
-              .join(',')}:${stack.moving}:${stack.fighting}`,
+              .join(',')}:${stack.moving}:${stack.fighting}:${stack.coordinates.join(',')}:${stack.movementProgress.toFixed(3)}`,
         )
         .join('|'),
     [divisionStacks],
@@ -965,10 +1100,11 @@ function App() {
             fighting: stack.fighting > 0,
             selected: stack.ids.includes(game.selectedDivisionId ?? ''),
             color: ownerColor(stack.owner, game),
+            progress: Math.round(stack.movementProgress * 100),
           },
           geometry: {
             type: 'Point' as const,
-            coordinates: territory.centroid,
+            coordinates: stack.coordinates,
           },
         }
       })
@@ -1163,21 +1299,80 @@ function App() {
       return
     }
 
+    const finalTarget = path[path.length - 1]
+    const firstStep = path[0]
+    const routeStart: [number, number] =
+      selectedDivision.status === 'moving' &&
+      selectedDivision.order.totalTicks > 0 &&
+      firstStep
+        ? [
+            current.centroid[0] +
+              (firstStep.centroid[0] - current.centroid[0]) *
+                Math.max(
+                  0,
+                  Math.min(
+                    0.98,
+                    1 -
+                      selectedDivision.order.remainingTicks /
+                        selectedDivision.order.totalTicks,
+                  ),
+                ),
+            current.centroid[1] +
+              (firstStep.centroid[1] - current.centroid[1]) *
+                Math.max(
+                  0,
+                  Math.min(
+                    0.98,
+                    1 -
+                      selectedDivision.order.remainingTicks /
+                        selectedDivision.order.totalTicks,
+                  ),
+                ),
+          ]
+        : current.centroid
+
+    const routeFeatures = [
+      {
+        type: 'Feature' as const,
+        properties: { kind: 'route' },
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: [
+            routeStart,
+            ...path.map((territory) => territory.centroid),
+          ],
+        },
+      },
+      ...path.slice(0, -1).map((territory, index) => ({
+        type: 'Feature' as const,
+        properties: {
+          kind: 'waypoint',
+          sequence: index + 1,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: territory.centroid,
+        },
+      })),
+      {
+        type: 'Feature' as const,
+        properties: {
+          kind: 'target',
+          label:
+            selectedDivision.order.type === 'attack'
+              ? `공격 목표 · ${finalTarget.name}`
+              : `이동 목표 · ${finalTarget.name}`,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: finalTarget.centroid,
+        },
+      },
+    ]
+
     source.setData({
       type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              current.centroid,
-              ...path.map((territory) => territory.centroid),
-            ],
-          },
-        },
-      ],
+      features: routeFeatures,
     })
   }, [
     selectedDivision?.id,
@@ -1186,6 +1381,94 @@ function App() {
     selectedDivision?.order?.remainingTicks,
     layerReady,
   ])
+
+  const selectedMovement = useMemo(() => {
+    if (!game || !selectedDivision?.order) return null
+
+    const current = game.territories[selectedDivision.locationId]
+    const nextId = selectedDivision.order.path[0]
+    const next = nextId ? game.territories[nextId] : null
+    const target =
+      game.territories[selectedDivision.order.targetId] ?? null
+    const totalTicks = Math.max(1, selectedDivision.order.totalTicks)
+    const remainingTicks = Math.max(
+      0,
+      selectedDivision.order.remainingTicks,
+    )
+    const progress =
+      selectedDivision.status === 'moving'
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round((1 - remainingTicks / totalTicks) * 100),
+            ),
+          )
+        : selectedDivision.status === 'attacking'
+          ? 100
+          : 0
+
+    return {
+      current,
+      next,
+      target,
+      progress,
+      remainingTicks,
+      remainingLegs: selectedDivision.order.path.length,
+      attacking: selectedDivision.order.type === 'attack',
+    }
+  }, [
+    game?.territories,
+    selectedDivision?.id,
+    selectedDivision?.locationId,
+    selectedDivision?.status,
+    selectedDivision?.order?.targetId,
+    selectedDivision?.order?.remainingTicks,
+    selectedDivision?.order?.totalTicks,
+    selectedDivision?.order?.path,
+  ])
+
+  const beginnerStep = useMemo(() => {
+    if (!game || game.phase !== 'running') return null
+    if (!selectedDivision) {
+      return {
+        step: 1,
+        title: '사단을 선택하세요',
+        detail: '지도 위 아군 부대 카운터 또는 사단 패널을 클릭합니다.',
+      }
+    }
+    if (selectedDivision.status === 'idle') {
+      return {
+        step: 2,
+        title: `${selectedDivision.name || '선택 사단'} 이동 준비`,
+        detail:
+          '지도에서 목적지를 클릭하세요. 아군 지역은 이동, 적 지역은 이동 후 공격합니다.',
+      }
+    }
+    if (selectedDivision.status === 'moving') {
+      return {
+        step: 3,
+        title: `${selectedDivision.name || '선택 사단'} 이동 중`,
+        detail: selectedMovement?.next
+          ? `${selectedMovement.next.name} 방면 · 현재 구간 ${selectedMovement.progress}% · ${selectedMovement.remainingTicks}틱 남음`
+          : '지정한 경로를 따라 이동하고 있습니다.',
+      }
+    }
+    if (selectedDivision.status === 'attacking') {
+      return {
+        step: 4,
+        title: `${selectedDivision.name || '선택 사단'} 교전 중`,
+        detail: selectedMovement?.target
+          ? `${selectedMovement.target.name} 전투 진행 중 · 전선 패널에서 상황을 확인하세요.`
+          : '전투가 진행 중입니다.',
+      }
+    }
+    return {
+      step: 3,
+      title: `${selectedDivision.name || '선택 사단'} 방어 중`,
+      detail: '현재 지역을 방어하고 있습니다.',
+    }
+  }, [game?.phase, selectedDivision, selectedMovement])
 
   const selectedIsIsolated = Boolean(
     selected &&
@@ -1518,6 +1801,9 @@ function App() {
   const handleNewGame = () => {
     if (!adminData) return
     const next = createInitialState(adminData.territories, adminData.version)
+    setBeginnerOpen(true)
+    setArmyOpen(false)
+    setHqFaction('player')
     setGame((previous) => ({
       ...next,
       playerName: previous?.playerName ?? next.playerName,
@@ -2619,6 +2905,24 @@ function App() {
                         ? ` · 현재 구간 ${selectedDivision.order.remainingTicks}틱`
                         : ''}
                     </small>
+                    {selectedMovement && selectedDivision.status === 'moving' && (
+                      <div className="division-movement-progress">
+                        <div>
+                          <span>
+                            {selectedMovement.current?.name ?? '?'} →{' '}
+                            {selectedMovement.next?.name ?? '?'}
+                          </span>
+                          <strong>{selectedMovement.progress}%</strong>
+                        </div>
+                        <i>
+                          <b
+                            style={{
+                              width: `${selectedMovement.progress}%`,
+                            }}
+                          />
+                        </i>
+                      </div>
+                    )}
                     <button
                       onClick={() =>
                         setGame((previous) =>
@@ -2723,10 +3027,113 @@ function App() {
               </div>
             </div>
 
+            <div className="system-guide-grid">
+              <div>
+                <strong>사단</strong>
+                <span>지도 부대 클릭 → 목적지 클릭. 이동 경로·목표·진행률이 지도에 표시됩니다.</span>
+              </div>
+              <div>
+                <strong>군단 / 전략</strong>
+                <span>사단을 군단에 배속하고 군단 전략과 작전 목표를 설정합니다.</span>
+              </div>
+              <div>
+                <strong>생산 / 산업</strong>
+                <span>민수·군수·물류·인프라·연구시설, 사단, 방어시설, 철도를 건설합니다.</span>
+              </div>
+              <div>
+                <strong>연구 / 국가 전략</strong>
+                <span>20개 기술 노드와 국가 전략으로 산업·물류·지휘·공병 체계를 발전시킵니다.</span>
+              </div>
+              <div>
+                <strong>보급 / 철도</strong>
+                <span>연결된 영토·물류센터·인프라·철도가 보급과 이동 속도에 영향을 줍니다.</span>
+              </div>
+              <div>
+                <strong>전선 / 전투</strong>
+                <span>전선 패널에서 진행 중 전투와 지역 압력, 작전 상태를 확인합니다.</span>
+              </div>
+              <div>
+                <strong>타국 지휘부</strong>
+                <span>사단 패널의 세력 탭에서 AI 군단·지휘관·전략·목표·준비도를 확인합니다.</span>
+              </div>
+              <div>
+                <strong>전략 지도</strong>
+                <span>영토 → 보급 → 산업 → 지형 → 철도 모드로 상황을 분석합니다.</span>
+              </div>
+            </div>
+
             <p className="rules-tip">
               Space = 정지/재개 · 1/2/4 = 배속 · 0 = ×10 · F = 선택 지역 확대
             </p>
           </section>
+        )}
+
+        {game?.phase === 'running' && beginnerOpen && beginnerStep && (
+          <section className={`beginner-coach step-${beginnerStep.step}`}>
+            <div className="beginner-coach-step">
+              <span>초보 지휘 안내 · STEP {beginnerStep.step}</span>
+              <strong>{beginnerStep.title}</strong>
+              <small>{beginnerStep.detail}</small>
+              {selectedMovement && selectedDivision?.status === 'moving' && (
+                <div className="beginner-move-progress">
+                  <div>
+                    <span>현재 구간 진행</span>
+                    <b>{selectedMovement.progress}%</b>
+                  </div>
+                  <i>
+                    <b style={{ width: `${selectedMovement.progress}%` }} />
+                  </i>
+                  <small>
+                    {selectedMovement.current?.name ?? '?'} →{' '}
+                    {selectedMovement.next?.name ?? '?'} · 이후{' '}
+                    {Math.max(0, selectedMovement.remainingLegs - 1)}구간
+                  </small>
+                </div>
+              )}
+            </div>
+            <div className="beginner-shortcuts">
+              <button
+                onClick={() => {
+                  setHqFaction('player')
+                  setArmyOpen(true)
+                }}
+              >
+                사단·군단
+                <small>이동/전략</small>
+              </button>
+              <button onClick={() => setProductionOpen(true)}>
+                생산
+                <small>산업/철도</small>
+              </button>
+              <button onClick={() => setResearchOpen(true)}>
+                연구
+                <small>테크트리</small>
+              </button>
+              <button onClick={() => setFrontOpen(true)}>
+                전선
+                <small>전투 확인</small>
+              </button>
+              <button onClick={() => setRulesOpen(true)}>
+                전체 기능
+                <small>규칙 보기</small>
+              </button>
+              <button
+                className="beginner-hide"
+                onClick={() => setBeginnerOpen(false)}
+              >
+                안내 숨기기
+              </button>
+            </div>
+          </section>
+        )}
+
+        {game?.phase === 'running' && !beginnerOpen && (
+          <button
+            className="beginner-tab"
+            onClick={() => setBeginnerOpen(true)}
+          >
+            ? 플레이 가이드
+          </button>
         )}
 
         {game && counts && game.phase !== 'setup' && total > 0 && (
@@ -2798,6 +3205,7 @@ function App() {
             지휘
           </button>
           <button
+            title="사단 선택, 이동 명령, 군단 편성, 타국 지휘부"
             className={armyOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setArmyOpen((open) => !open)}
@@ -2806,6 +3214,7 @@ function App() {
             {playerDivisionList.length > 0 && <b>{playerDivisionList.length}</b>}
           </button>
           <button
+            title="산업 시설, 철도, 사단, 방어시설 생산"
             className={productionOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setProductionOpen((open) => !open)}
@@ -2814,6 +3223,7 @@ function App() {
             {playerQueue.length > 0 && <b>{playerQueue.length}</b>}
           </button>
           <button
+            title="기술 트리와 국가 전략"
             className={researchOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setResearchOpen((open) => !open)}
@@ -2821,6 +3231,7 @@ function App() {
             연구
           </button>
           <button
+            title="진행 중 전투와 전선 압력 확인"
             className={frontOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setFrontOpen((open) => !open)}
@@ -2829,6 +3240,7 @@ function App() {
             {playerBattles.length > 0 && <b>{playerBattles.length}</b>}
           </button>
           <button
+            title="일시정지와 1×/2×/4×/10× 시간 조절"
             className={speedOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setSpeedOpen((open) => !open)}
@@ -3162,6 +3574,9 @@ function App() {
                 )
                 setCommandOpen(false)
                 setRulesOpen(false)
+                setBeginnerOpen(true)
+                setHqFaction('player')
+                setArmyOpen(true)
               }}
             >
               {selected ? `${selected.name}에서 시작` : '시작 지역 선택'}
