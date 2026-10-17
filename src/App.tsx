@@ -92,6 +92,7 @@ const DIVISION_ROUTE_TARGET_LABEL_LAYER_ID = 'division-route-target-label'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
+const DIVISION_PROGRESS_LABEL_LAYER_ID = 'division-progress-label'
 const RAILWAY_SOURCE_ID = 'railway-network'
 const RAILWAY_LAYER_ID = 'railway-network-line'
 type MapMode = 'control' | 'supply' | 'industry' | 'terrain' | 'railway'
@@ -523,6 +524,25 @@ function App() {
         'text-color': '#f6f2e6',
         'text-halo-color': '#161818',
         'text-halo-width': 1.1,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_PROGRESS_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_SOURCE_ID,
+      filter: ['==', ['get', 'moving'], true],
+      layout: {
+        'text-field': ['concat', '이동 ', ['to-string', ['get', 'progress']], '%'],
+        'text-size': 9,
+        'text-offset': [0, 2.25],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f0d48a',
+        'text-halo-color': '#171918',
+        'text-halo-width': 1.25,
       },
     })
 
@@ -2705,6 +2725,41 @@ function App() {
               </div>
             </div>
 
+            <div className="system-guide-grid">
+              <div>
+                <strong>사단</strong>
+                <span>지도 부대 클릭 → 목적지 클릭. 이동 경로·목표·진행률이 지도에 표시됩니다.</span>
+              </div>
+              <div>
+                <strong>군단 / 전략</strong>
+                <span>사단을 군단에 배속하고 균형·기동·집중·방어·보급 전략을 선택합니다.</span>
+              </div>
+              <div>
+                <strong>생산 / 산업</strong>
+                <span>민수·군수·물류·인프라·연구시설, 사단, 방어시설, 철도를 건설합니다.</span>
+              </div>
+              <div>
+                <strong>연구</strong>
+                <span>산업·물류·지휘·공병 4개 계통의 선행조건형 테크트리를 발전시킵니다.</span>
+              </div>
+              <div>
+                <strong>보급 / 철도</strong>
+                <span>연결된 영토·물류센터·인프라·철도가 보급을 높이고 사단 이동을 빠르게 합니다.</span>
+              </div>
+              <div>
+                <strong>전선 / 전투</strong>
+                <span>전선 패널에서 진행 중인 전투와 지역 압력을 확인하고 작전 상태를 파악합니다.</span>
+              </div>
+              <div>
+                <strong>타국 지휘부</strong>
+                <span>사단 패널의 세력 탭에서 AI 군단·지휘관·전략·목표·준비도를 확인합니다.</span>
+              </div>
+              <div>
+                <strong>전략 지도</strong>
+                <span>영토 → 보급 → 산업 → 지형 → 철도 순으로 지도 모드를 바꿔 상황을 읽습니다.</span>
+              </div>
+            </div>
+
             <p className="rules-tip">
               Space = 정지/재개 · 1/2/4 = 배속 · 0 = ×10 · F = 선택 지역 확대
             </p>
@@ -2837,6 +2892,7 @@ function App() {
             지휘
           </button>
           <button
+            title="사단 선택, 이동 명령, 군단 편성, 타국 지휘부"
             className={armyOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setArmyOpen((open) => !open)}
@@ -2845,6 +2901,7 @@ function App() {
             {playerDivisionList.length > 0 && <b>{playerDivisionList.length}</b>}
           </button>
           <button
+            title="산업 시설, 철도, 사단, 방어시설 생산"
             className={productionOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setProductionOpen((open) => !open)}
@@ -2853,6 +2910,7 @@ function App() {
             {playerQueue.length > 0 && <b>{playerQueue.length}</b>}
           </button>
           <button
+            title="산업·물류·지휘·공병 기술 트리"
             className={researchOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setResearchOpen((open) => !open)}
@@ -2860,6 +2918,7 @@ function App() {
             연구
           </button>
           <button
+            title="진행 중 전투와 전선 압력 확인"
             className={frontOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setFrontOpen((open) => !open)}
@@ -2868,6 +2927,7 @@ function App() {
             {playerBattles.length > 0 && <b>{playerBattles.length}</b>}
           </button>
           <button
+            title="일시정지와 1×/2×/4×/10× 시간 조절"
             className={speedOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setSpeedOpen((open) => !open)}
