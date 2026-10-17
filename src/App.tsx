@@ -1276,21 +1276,49 @@ function App() {
       return
     }
 
+    const finalTarget = path[path.length - 1]
+    const routeFeatures = [
+      {
+        type: 'Feature' as const,
+        properties: { kind: 'route' },
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: [
+            current.centroid,
+            ...path.map((territory) => territory.centroid),
+          ],
+        },
+      },
+      ...path.slice(0, -1).map((territory, index) => ({
+        type: 'Feature' as const,
+        properties: {
+          kind: 'waypoint',
+          sequence: index + 1,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: territory.centroid,
+        },
+      })),
+      {
+        type: 'Feature' as const,
+        properties: {
+          kind: 'target',
+          label:
+            selectedDivision.order.type === 'attack'
+              ? `공격 목표 · ${finalTarget.name}`
+              : `이동 목표 · ${finalTarget.name}`,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: finalTarget.centroid,
+        },
+      },
+    ]
+
     source.setData({
       type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              current.centroid,
-              ...path.map((territory) => territory.centroid),
-            ],
-          },
-        },
-      ],
+      features: routeFeatures,
     })
   }, [
     selectedDivision?.id,
@@ -1299,6 +1327,94 @@ function App() {
     selectedDivision?.order?.remainingTicks,
     layerReady,
   ])
+
+  const selectedMovement = useMemo(() => {
+    if (!game || !selectedDivision?.order) return null
+
+    const current = game.territories[selectedDivision.locationId]
+    const nextId = selectedDivision.order.path[0]
+    const next = nextId ? game.territories[nextId] : null
+    const target =
+      game.territories[selectedDivision.order.targetId] ?? null
+    const totalTicks = Math.max(1, selectedDivision.order.totalTicks)
+    const remainingTicks = Math.max(
+      0,
+      selectedDivision.order.remainingTicks,
+    )
+    const progress =
+      selectedDivision.status === 'moving'
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round((1 - remainingTicks / totalTicks) * 100),
+            ),
+          )
+        : selectedDivision.status === 'attacking'
+          ? 100
+          : 0
+
+    return {
+      current,
+      next,
+      target,
+      progress,
+      remainingTicks,
+      remainingLegs: selectedDivision.order.path.length,
+      attacking: selectedDivision.order.type === 'attack',
+    }
+  }, [
+    game?.territories,
+    selectedDivision?.id,
+    selectedDivision?.locationId,
+    selectedDivision?.status,
+    selectedDivision?.order?.targetId,
+    selectedDivision?.order?.remainingTicks,
+    selectedDivision?.order?.totalTicks,
+    selectedDivision?.order?.path,
+  ])
+
+  const beginnerStep = useMemo(() => {
+    if (!game || game.phase !== 'running') return null
+    if (!selectedDivision) {
+      return {
+        step: 1,
+        title: '사단을 선택하세요',
+        detail: '지도 위 아군 부대 카운터 또는 사단 패널을 클릭합니다.',
+      }
+    }
+    if (selectedDivision.status === 'idle') {
+      return {
+        step: 2,
+        title: `${selectedDivision.name || '선택 사단'} 이동 준비`,
+        detail:
+          '지도에서 목적지를 클릭하세요. 아군 지역은 이동, 적 지역은 이동 후 공격합니다.',
+      }
+    }
+    if (selectedDivision.status === 'moving') {
+      return {
+        step: 3,
+        title: `${selectedDivision.name || '선택 사단'} 이동 중`,
+        detail: selectedMovement?.next
+          ? `${selectedMovement.next.name} 방면 · 현재 구간 ${selectedMovement.progress}% · ${selectedMovement.remainingTicks}틱 남음`
+          : '지정한 경로를 따라 이동하고 있습니다.',
+      }
+    }
+    if (selectedDivision.status === 'attacking') {
+      return {
+        step: 4,
+        title: `${selectedDivision.name || '선택 사단'} 교전 중`,
+        detail: selectedMovement?.target
+          ? `${selectedMovement.target.name} 전투 진행 중 · 전선 패널에서 상황을 확인하세요.`
+          : '전투가 진행 중입니다.',
+      }
+    }
+    return {
+      step: 3,
+      title: `${selectedDivision.name || '선택 사단'} 방어 중`,
+      detail: '현재 지역을 방어하고 있습니다.',
+    }
+  }, [game?.phase, selectedDivision, selectedMovement])
 
   const selectedIsIsolated = Boolean(
     selected &&
