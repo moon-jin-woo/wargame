@@ -3266,3 +3266,238 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Beginner visibility + movement visualization */
+.beginner-coach {
+  position: absolute;
+  right: 50%;
+  bottom: 76px;
+  z-index: 13;
+  display: grid;
+  grid-template-columns: minmax(250px, 1.2fr) minmax(300px, 1fr);
+  gap: 10px;
+  width: min(760px, calc(100% - 34px));
+  padding: 10px;
+  border: 1px solid rgba(199, 170, 104, 0.42);
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, rgba(34, 36, 33, 0.97), rgba(14, 17, 16, 0.97));
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(14px);
+  transform: translateX(50%);
+}
+
+.beginner-coach-step {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--ops-brass);
+  background: rgba(199, 170, 104, 0.045);
+}
+
+.beginner-coach-step > span {
+  color: var(--ops-brass);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.beginner-coach-step > strong {
+  overflow: hidden;
+  color: #eee8d7;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beginner-coach-step > small {
+  color: #969990;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.beginner-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.beginner-shortcuts button {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(186, 169, 126, 0.17);
+  border-radius: 3px;
+  background: rgba(11, 13, 12, 0.58);
+  color: #d7d2c5;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.beginner-shortcuts button:hover {
+  border-color: var(--ops-border-strong);
+  background: rgba(199, 170, 104, 0.08);
+}
+
+.beginner-shortcuts button small {
+  overflow: hidden;
+  color: #787d75;
+  font-size: 7px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beginner-shortcuts .beginner-hide {
+  place-content: center;
+  color: #858980;
+  text-align: center;
+}
+
+.beginner-tab {
+  position: absolute;
+  right: 14px;
+  bottom: 78px;
+  z-index: 13;
+  padding: 8px 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: 4px;
+  background: rgba(20, 23, 22, 0.94);
+  color: var(--ops-brass);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+}
+
+.beginner-move-progress {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.beginner-move-progress > div,
+.division-movement-progress > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.beginner-move-progress > div span,
+.beginner-move-progress > small,
+.division-movement-progress span {
+  color: #888d84;
+  font-size: 7px;
+}
+
+.beginner-move-progress > div b,
+.division-movement-progress strong {
+  color: #f0d48a;
+  font-size: 8px;
+}
+
+.beginner-move-progress > i,
+.division-movement-progress > i {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: #34362f;
+}
+
+.beginner-move-progress > i b,
+.division-movement-progress > i b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #806f48, #f0d48a);
+  transition: width 180ms linear;
+}
+
+.division-movement-progress {
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid rgba(199, 170, 104, 0.18);
+  background: rgba(199, 170, 104, 0.045);
+}
+
+.system-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.system-guide-grid > div {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid rgba(186, 169, 126, 0.16);
+  border-radius: 4px;
+  background: rgba(12, 15, 14, 0.58);
+}
+
+.system-guide-grid strong {
+  color: #ddd7c7;
+  font-size: 9px;
+}
+
+.system-guide-grid span {
+  color: #858a82;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+@media (max-width: 860px) {
+  .beginner-coach {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    grid-template-columns: 1fr;
+    transform: none;
+  }
+
+  .beginner-shortcuts {
+    grid-template-columns: repeat(6, minmax(72px, 1fr));
+    overflow-x: auto;
+  }
+
+  .beginner-shortcuts button {
+    min-width: 78px;
+  }
+}
+
+@media (max-width: 620px) {
+  .beginner-coach {
+    right: 8px;
+    bottom: 72px;
+    left: 8px;
+    max-height: 42vh;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .beginner-coach-step > strong {
+    white-space: normal;
+  }
+
+  .beginner-shortcuts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .system-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .beginner-coach ~ .situation-panel {
+    display: none;
+  }
+}
