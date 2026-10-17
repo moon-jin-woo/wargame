@@ -1747,6 +1747,9 @@ function App() {
   const handleNewGame = () => {
     if (!adminData) return
     const next = createInitialState(adminData.territories, adminData.version)
+    setBeginnerOpen(true)
+    setArmyOpen(false)
+    setHqFaction('player')
     setGame((previous) => ({
       ...next,
       playerName: previous?.playerName ?? next.playerName,
@@ -2848,6 +2851,24 @@ function App() {
                         ? ` · 현재 구간 ${selectedDivision.order.remainingTicks}틱`
                         : ''}
                     </small>
+                    {selectedMovement && selectedDivision.status === 'moving' && (
+                      <div className="division-movement-progress">
+                        <div>
+                          <span>
+                            {selectedMovement.current?.name ?? '?'} →{' '}
+                            {selectedMovement.next?.name ?? '?'}
+                          </span>
+                          <strong>{selectedMovement.progress}%</strong>
+                        </div>
+                        <i>
+                          <b
+                            style={{
+                              width: `${selectedMovement.progress}%`,
+                            }}
+                          />
+                        </i>
+                      </div>
+                    )}
                     <button
                       onClick={() =>
                         setGame((previous) =>
@@ -2952,10 +2973,113 @@ function App() {
               </div>
             </div>
 
+            <div className="system-guide-grid">
+              <div>
+                <strong>사단</strong>
+                <span>지도 부대 클릭 → 목적지 클릭. 이동 경로·목표·진행률이 지도에 표시됩니다.</span>
+              </div>
+              <div>
+                <strong>군단 / 전략</strong>
+                <span>사단을 군단에 배속하고 군단 전략과 작전 목표를 설정합니다.</span>
+              </div>
+              <div>
+                <strong>생산 / 산업</strong>
+                <span>민수·군수·물류·인프라·연구시설, 사단, 방어시설, 철도를 건설합니다.</span>
+              </div>
+              <div>
+                <strong>연구 / 국가 전략</strong>
+                <span>20개 기술 노드와 국가 전략으로 산업·물류·지휘·공병 체계를 발전시킵니다.</span>
+              </div>
+              <div>
+                <strong>보급 / 철도</strong>
+                <span>연결된 영토·물류센터·인프라·철도가 보급과 이동 속도에 영향을 줍니다.</span>
+              </div>
+              <div>
+                <strong>전선 / 전투</strong>
+                <span>전선 패널에서 진행 중 전투와 지역 압력, 작전 상태를 확인합니다.</span>
+              </div>
+              <div>
+                <strong>타국 지휘부</strong>
+                <span>사단 패널의 세력 탭에서 AI 군단·지휘관·전략·목표·준비도를 확인합니다.</span>
+              </div>
+              <div>
+                <strong>전략 지도</strong>
+                <span>영토 → 보급 → 산업 → 지형 → 철도 모드로 상황을 분석합니다.</span>
+              </div>
+            </div>
+
             <p className="rules-tip">
               Space = 정지/재개 · 1/2/4 = 배속 · 0 = ×10 · F = 선택 지역 확대
             </p>
           </section>
+        )}
+
+        {game?.phase === 'running' && beginnerOpen && beginnerStep && (
+          <section className={`beginner-coach step-${beginnerStep.step}`}>
+            <div className="beginner-coach-step">
+              <span>초보 지휘 안내 · STEP {beginnerStep.step}</span>
+              <strong>{beginnerStep.title}</strong>
+              <small>{beginnerStep.detail}</small>
+              {selectedMovement && selectedDivision?.status === 'moving' && (
+                <div className="beginner-move-progress">
+                  <div>
+                    <span>현재 구간 진행</span>
+                    <b>{selectedMovement.progress}%</b>
+                  </div>
+                  <i>
+                    <b style={{ width: `${selectedMovement.progress}%` }} />
+                  </i>
+                  <small>
+                    {selectedMovement.current?.name ?? '?'} →{' '}
+                    {selectedMovement.next?.name ?? '?'} · 이후{' '}
+                    {Math.max(0, selectedMovement.remainingLegs - 1)}구간
+                  </small>
+                </div>
+              )}
+            </div>
+            <div className="beginner-shortcuts">
+              <button
+                onClick={() => {
+                  setHqFaction('player')
+                  setArmyOpen(true)
+                }}
+              >
+                사단·군단
+                <small>이동/전략</small>
+              </button>
+              <button onClick={() => setProductionOpen(true)}>
+                생산
+                <small>산업/철도</small>
+              </button>
+              <button onClick={() => setResearchOpen(true)}>
+                연구
+                <small>테크트리</small>
+              </button>
+              <button onClick={() => setFrontOpen(true)}>
+                전선
+                <small>전투 확인</small>
+              </button>
+              <button onClick={() => setRulesOpen(true)}>
+                전체 기능
+                <small>규칙 보기</small>
+              </button>
+              <button
+                className="beginner-hide"
+                onClick={() => setBeginnerOpen(false)}
+              >
+                안내 숨기기
+              </button>
+            </div>
+          </section>
+        )}
+
+        {game?.phase === 'running' && !beginnerOpen && (
+          <button
+            className="beginner-tab"
+            onClick={() => setBeginnerOpen(true)}
+          >
+            ? 플레이 가이드
+          </button>
         )}
 
         {game && counts && game.phase !== 'setup' && total > 0 && (
@@ -3027,6 +3151,7 @@ function App() {
             지휘
           </button>
           <button
+            title="사단 선택, 이동 명령, 군단 편성, 타국 지휘부"
             className={armyOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setArmyOpen((open) => !open)}
@@ -3035,6 +3160,7 @@ function App() {
             {playerDivisionList.length > 0 && <b>{playerDivisionList.length}</b>}
           </button>
           <button
+            title="산업 시설, 철도, 사단, 방어시설 생산"
             className={productionOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setProductionOpen((open) => !open)}
@@ -3043,6 +3169,7 @@ function App() {
             {playerQueue.length > 0 && <b>{playerQueue.length}</b>}
           </button>
           <button
+            title="기술 트리와 국가 전략"
             className={researchOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setResearchOpen((open) => !open)}
@@ -3050,6 +3177,7 @@ function App() {
             연구
           </button>
           <button
+            title="진행 중 전투와 전선 압력 확인"
             className={frontOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setFrontOpen((open) => !open)}
@@ -3058,6 +3186,7 @@ function App() {
             {playerBattles.length > 0 && <b>{playerBattles.length}</b>}
           </button>
           <button
+            title="일시정지와 1×/2×/4×/10× 시간 조절"
             className={speedOpen ? 'active' : ''}
             disabled={game?.phase !== 'running'}
             onClick={() => setSpeedOpen((open) => !open)}
@@ -3391,6 +3520,9 @@ function App() {
                 )
                 setCommandOpen(false)
                 setRulesOpen(false)
+                setBeginnerOpen(true)
+                setHqFaction('player')
+                setArmyOpen(true)
               }}
             >
               {selected ? `${selected.name}에서 시작` : '시작 지역 선택'}
