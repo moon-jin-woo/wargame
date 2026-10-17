@@ -86,6 +86,9 @@ const FILL_LAYER_ID = 'admin-dongs-fill'
 const LINE_LAYER_ID = 'admin-dongs-line'
 const DIVISION_ROUTE_SOURCE_ID = 'division-route'
 const DIVISION_ROUTE_LAYER_ID = 'division-route-line'
+const DIVISION_ROUTE_WAYPOINT_LAYER_ID = 'division-route-waypoint'
+const DIVISION_ROUTE_TARGET_LAYER_ID = 'division-route-target'
+const DIVISION_ROUTE_TARGET_LABEL_LAYER_ID = 'division-route-target-label'
 const DIVISION_SOURCE_ID = 'division-stacks'
 const DIVISION_COUNTER_LAYER_ID = 'division-counter'
 const DIVISION_LABEL_LAYER_ID = 'division-counter-label'
@@ -363,11 +366,58 @@ function App() {
       id: DIVISION_ROUTE_LAYER_ID,
       type: 'line',
       source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'route'],
       paint: {
         'line-color': '#f0d48a',
-        'line-width': 2.4,
-        'line-opacity': 0.9,
-        'line-dasharray': [2, 1.5],
+        'line-width': 2.8,
+        'line-opacity': 0.95,
+        'line-dasharray': [2, 1.35],
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_WAYPOINT_LAYER_ID,
+      type: 'circle',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'waypoint'],
+      paint: {
+        'circle-radius': 4,
+        'circle-color': '#f0d48a',
+        'circle-opacity': 0.92,
+        'circle-stroke-color': '#22231f',
+        'circle-stroke-width': 1.5,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_TARGET_LAYER_ID,
+      type: 'circle',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'target'],
+      paint: {
+        'circle-radius': 9,
+        'circle-color': 'rgba(240, 212, 138, 0.12)',
+        'circle-stroke-color': '#f0d48a',
+        'circle-stroke-width': 2.5,
+      },
+    })
+
+    map.addLayer({
+      id: DIVISION_ROUTE_TARGET_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: DIVISION_ROUTE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'target'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 10,
+        'text-offset': [0, 1.55],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#f4e4b6',
+        'text-halo-color': '#171918',
+        'text-halo-width': 1.4,
       },
     })
 
@@ -812,10 +862,50 @@ function App() {
         ids: string[]
         moving: number
         fighting: number
+        coordinates: [number, number]
+        movementProgress: number
       }
     >()
 
     for (const division of Object.values(game.divisionUnits)) {
+      const territory = game.territories[division.locationId]
+      if (!territory) continue
+
+      const nextTerritory =
+        division.status === 'moving' && division.order?.path[0]
+          ? game.territories[division.order.path[0]]
+          : null
+
+      if (nextTerritory && division.order) {
+        const totalTicks = Math.max(1, division.order.totalTicks)
+        const movementProgress = Math.max(
+          0,
+          Math.min(
+            0.98,
+            1 - division.order.remainingTicks / totalTicks,
+          ),
+        )
+        const coordinates: [number, number] = [
+          territory.centroid[0] +
+            (nextTerritory.centroid[0] - territory.centroid[0]) *
+              movementProgress,
+          territory.centroid[1] +
+            (nextTerritory.centroid[1] - territory.centroid[1]) *
+              movementProgress,
+        ]
+        grouped.set(`moving:${division.id}`, {
+          key: `moving:${division.id}`,
+          territoryId: division.locationId,
+          owner: division.owner,
+          ids: [division.id],
+          moving: 1,
+          fighting: 0,
+          coordinates,
+          movementProgress,
+        })
+        continue
+      }
+
       const key = `${division.locationId}:${division.owner}`
       const current = grouped.get(key) ?? {
         key,
@@ -824,10 +914,11 @@ function App() {
         ids: [],
         moving: 0,
         fighting: 0,
+        coordinates: territory.centroid,
+        movementProgress: 0,
       }
 
       current.ids.push(division.id)
-      if (division.status === 'moving') current.moving += 1
       if (
         division.status === 'attacking' ||
         division.status === 'defending'
@@ -840,7 +931,7 @@ function App() {
     return [...grouped.values()].sort((a, b) =>
       a.key.localeCompare(b.key),
     )
-  }, [game?.divisionUnits])
+  }, [game?.divisionUnits, game?.territories])
 
   const divisionStackSignature = useMemo(
     () =>
@@ -849,7 +940,7 @@ function App() {
           (stack) =>
             `${stack.key}:${stack.ids
               .map((id) => `${id}:${game?.divisionUnits[id]?.role ?? 'line'}`)
-              .join(',')}:${stack.moving}:${stack.fighting}`,
+              .join(',')}:${stack.moving}:${stack.fighting}:${stack.coordinates.join(',')}:${stack.movementProgress.toFixed(3)}`,
         )
         .join('|'),
     [divisionStacks],
@@ -894,10 +985,11 @@ function App() {
             fighting: stack.fighting > 0,
             selected: stack.ids.includes(game.selectedDivisionId ?? ''),
             color: ownerColor(stack.owner, game),
+            progress: Math.round(stack.movementProgress * 100),
           },
           geometry: {
             type: 'Point' as const,
-            coordinates: territory.centroid,
+            coordinates: stack.coordinates,
           },
         }
       })
